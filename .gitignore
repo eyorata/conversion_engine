@@ -1,0 +1,58 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+.env
+.env.local
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node / Playwright
+node_modules/
+playwright-report/
+test-results/
+
+# Data (heavy, fetched at runtime)
+data/raw/
+data/cache/
+data/cfpb_cache/
+data/crunchbase_sample.json
+data/layoffs.csv
+*.sqlite
+*.db
+
+# Traces and eval outputs
+eval/runs/
+eval/held_out_traces.jsonl
+agent/conversation_state/*.json
+!agent/conversation_state/.gitkeep
+
+# Secrets
+*.pem
+*.key
+secrets/
+credentials.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# τ²-Bench (cloned as external)
+tau2-bench/
+
+# Logs
+*.log
+logs/
