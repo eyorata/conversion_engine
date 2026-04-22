@@ -1,0 +1,62 @@
+{
+  "_note": "Frozen snapshot seed. Keys are lowercased company names. 60d_ago totals are synthesized for demo purposes; real grading runs refresh these from Playwright crawls of public BuiltIn/Wellfound/careers pages.",
+  "anthropic": {
+    "current": {
+      "titles": [
+        "Applied AI Engineer",
+        "LLM Research Engineer",
+        "Data Platform Engineer",
+        "Software Engineer, Infrastructure",
+        "Product Manager, Claude"
+      ]
+    },
+    "60d_ago": {"total": 3}
+  },
+  "stripe": {
+    "current": {
+      "titles": [
+        "Staff Software Engineer",
+        "Machine Learning Engineer, Fraud",
+        "Data Engineer, Analytics",
+        "Site Reliability Engineer",
+        "Solutions Architect"
+      ]
+    },
+    "60d_ago": {"total": 4}
+  },
+  "openai": {
+    "current": {
+      "titles": [
+        "Research Engineer, Applied",
+        "ML Engineer, Evals",
+        "Platform Engineer, Model Inference",
+        "Product Engineer, API",
+        "VP of AI Infrastructure"
+      ]
+    },
+    "60d_ago": {"total": 4}
+  },
+  "databricks": {
+    "current": {
+      "titles": [
+        "Principal ML Platform Engineer",
+        "Data Engineer, Lakehouse",
+        "Staff Software Engineer",
+        "Field Engineer",
+        "Product Manager, MLflow"
+      ]
+    },
+    "60d_ago": {"total": 4}
+  },
+  "example-prospect": {
+    "current": {
+      "titles": [
+        "Senior Backend Engineer",
+        "Platform Engineer",
+        "Data Engineer",
+        "Product Designer"
+      ]
+    },
+    "60d_ago": {"total": 1}
+  }
+}

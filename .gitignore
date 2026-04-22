@@ -24,11 +24,14 @@ test-results/
 # Data (heavy, fetched at runtime)
 data/raw/
 data/cache/
-data/cfpb_cache/
+data/crunchbase_sample.csv
 data/crunchbase_sample.json
 data/layoffs.csv
 *.sqlite
 *.db
+# keep seed snapshots committed:
+!data/job_posts_snapshot.json
+!data/leadership_changes.json
 
 # Traces and eval outputs
 eval/runs/

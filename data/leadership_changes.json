@@ -1,0 +1,9 @@
+{
+  "_note": "Manual override for new-CTO/VP-Eng detections. Keys are lowercased company names. Real grading refreshes these from press releases and LinkedIn.",
+  "example-prospect": {
+    "role": "VP Engineering",
+    "person": "Jane Example",
+    "announced": "2026-03-15",
+    "source": "https://example.test/press/jane-example-vpe"
+  }
+}

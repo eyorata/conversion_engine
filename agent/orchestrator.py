@@ -1,15 +1,21 @@
-"""Orchestrates one inbound SMS turn end-to-end.
+"""Orchestrates one turn end-to-end for Tenacious.
 
-Flow:
-  1. classify inbound (stop/help/message)
-  2. load conversation state
-  3. if first touch, run enrichment pipeline (Crunchbase + CFPB + news)
-  4. call LLM with briefs + turns + available slots
-  5. policy check on proposed reply; regenerate once on violation
-  6. if intent=book, call Cal.com
-  7. upsert HubSpot contact + note
-  8. send SMS (kill switch applies)
-  9. persist conversation state
+Email is primary. SMS is only used for warm-lead scheduling handoff after a
+positive email reply. Voice (discovery call) is booked by the agent and
+delivered by a human.
+
+Flow for an inbound email reply:
+  1. load conversation state
+  2. run enrichment on first touch -> hiring_signal_brief + competitor_gap_brief
+  3. call LLM with briefs + turns + slots
+  4. policy check proposed message; regenerate once if violation
+  5. if intent=book, call Cal.com
+  6. upsert HubSpot contact + log note
+  7. send via email (or SMS if LLM chose that channel for warm-lead scheduling)
+  8. persist state
+
+The same method also handles outbound-first flow (synthetic seeding), inbound
+SMS replies from already-warm leads, and unsubscribe handling.
 """
 from __future__ import annotations
 
@@ -21,154 +27,231 @@ from typing import Optional
 
 from agent import state
 from agent.calcom_client import Booking, CalcomClient
+from agent.email_handler import EmailHandler, classify_email_reply
 from agent.hubspot_client import HubSpotClient
 from agent.llm import LLMClient
-from agent.policy import check_reply
+from agent.policy import check_outbound
 from agent.prompts import SYSTEM_PROMPT, SYSTEM_PROMPT_VERSION, build_user_prompt
 from agent.sms_gateway import SMSGateway, classify_inbound
 from agent.tracing import get_tracer
-from enrichment.pipeline import enrich_sync
+from enrichment.pipeline import enrich
 
 log = logging.getLogger(__name__)
 
-_STOP_REPLY = "You are unsubscribed. Reply HELP for help."
-_HELP_REPLY = "Acme ComplianceOS SDR. Reply STOP to opt out, or a brief note about your compliance workflow."
+_STOP_REPLY_EMAIL_SUBJECT = "Unsubscribed"
+_STOP_REPLY_EMAIL_BODY = (
+    "You're unsubscribed. We won't reach out again. "
+    "If that was a mistake, reply and we'll resume — otherwise, all the best."
+)
+_STOP_REPLY_SMS = "Unsubscribed. Reply HELP for help."
 
 
 class Orchestrator:
     def __init__(self) -> None:
         self.llm = LLMClient(tier="dev")
+        self.email = EmailHandler()
         self.sms = SMSGateway()
         self.hubspot = HubSpotClient()
         self.calcom = CalcomClient()
         self.tracer = get_tracer()
 
-    def handle_inbound(
+    def handle_turn(
         self,
         *,
-        phone: str,
-        text: str,
+        channel_in: str,            # "email" | "sms" | "seed"
+        inbound_text: str | None,
+        contact_key: str,           # phone or email — used as conversation state key
         email: Optional[str] = None,
+        phone: Optional[str] = None,
         company_hint: Optional[str] = None,
+        domain_hint: Optional[str] = None,
     ) -> dict:
         started = datetime.now(tz=timezone.utc)
         with self.tracer.span(
-            "inbound_turn",
-            phone=phone,
+            "turn",
+            channel_in=channel_in,
             prompt_version=SYSTEM_PROMPT_VERSION,
         ) as trace:
             trace_id = getattr(trace, "id", None) or "untraced"
-            conv = state.load(phone)
-            conv.turns.append(state.Turn(role="user", text=text, at=started.isoformat(), trace_id=trace_id))
+            conv = state.load(contact_key)
+            if inbound_text:
+                conv.turns.append(state.Turn(
+                    role="user",
+                    text=inbound_text,
+                    at=started.isoformat(),
+                    trace_id=trace_id,
+                ))
 
-            kind = classify_inbound(text)
-            if kind == "stop":
+            # unsubscribe handling
+            if channel_in == "sms" and classify_inbound(inbound_text or "") == "stop":
                 conv.opted_out = True
                 conv.stage = "opted_out"
-                self.sms.send(phone, _STOP_REPLY)
-                conv.turns.append(state.Turn(role="agent", text=_STOP_REPLY, at=datetime.now(tz=timezone.utc).isoformat(), trace_id=trace_id))
+                self.sms.send(phone or contact_key, _STOP_REPLY_SMS)
+                conv.turns.append(state.Turn(role="agent", text=_STOP_REPLY_SMS,
+                                             at=datetime.now(tz=timezone.utc).isoformat(),
+                                             trace_id=trace_id))
                 state.save(conv)
-                return {"trace_id": trace_id, "kind": "stop", "reply": _STOP_REPLY}
-
-            if kind == "help":
-                self.sms.send(phone, _HELP_REPLY)
-                conv.turns.append(state.Turn(role="agent", text=_HELP_REPLY, at=datetime.now(tz=timezone.utc).isoformat(), trace_id=trace_id))
+                return {"trace_id": trace_id, "kind": "stop", "channel_out": "sms"}
+            if channel_in == "email" and inbound_text and classify_email_reply(inbound_text) == "unsubscribe":
+                conv.opted_out = True
+                conv.stage = "opted_out"
+                self.email.send(
+                    to=email or contact_key,
+                    subject=_STOP_REPLY_EMAIL_SUBJECT,
+                    html=f"<p>{_STOP_REPLY_EMAIL_BODY}</p>",
+                    text=_STOP_REPLY_EMAIL_BODY,
+                )
+                conv.turns.append(state.Turn(role="agent", text=_STOP_REPLY_EMAIL_BODY,
+                                             at=datetime.now(tz=timezone.utc).isoformat(),
+                                             trace_id=trace_id))
                 state.save(conv)
-                return {"trace_id": trace_id, "kind": "help", "reply": _HELP_REPLY}
+                return {"trace_id": trace_id, "kind": "stop", "channel_out": "email"}
 
             if conv.opted_out:
-                return {"trace_id": trace_id, "kind": "ignored_opted_out", "reply": None}
+                return {"trace_id": trace_id, "kind": "ignored_opted_out"}
 
-            enrichment = {"enrichment_brief": {}, "compliance_brief": {}, "news_brief": {}}
+            # enrich on first touch
+            enrichment = {"hiring_signal_brief": {}, "competitor_gap_brief": None}
             if conv.stage in ("new",):
                 try:
-                    enrichment = enrich_sync(email=email, company=company_hint, phone=phone)
-                    eb = enrichment["enrichment_brief"]
-                    conv.crunchbase_id = eb.get("crunchbase_id")
-                    conv.company = eb.get("company") or company_hint
+                    enrichment = enrich(
+                        email=email,
+                        domain=domain_hint,
+                        company=company_hint,
+                        phone=phone,
+                    )
+                    hsb = enrichment["hiring_signal_brief"]
+                    prospect = hsb.get("prospect") or {}
+                    conv.crunchbase_id = prospect.get("crunchbase_id")
+                    conv.company = prospect.get("company") or company_hint
                     conv.stage = "enriched"
                 except Exception as e:
                     log.exception("enrichment failed: %s", e)
-                    enrichment["enrichment_brief"] = {"match": "no_crunchbase_hit", "error": str(e)}
+                    enrichment["hiring_signal_brief"] = {"match": "no_crunchbase_hit", "error": str(e)}
 
             slots = self.calcom.available_slots()
+            # Decide preferred outbound channel: email for cold/inbound-email,
+            # SMS only if prospect has already engaged and asked for scheduling
+            outbound_channel = "email"
+            if channel_in == "sms" and conv.stage in ("enriched", "qualifying"):
+                outbound_channel = "sms"
+
             user_prompt = build_user_prompt(
-                enrichment_brief=enrichment["enrichment_brief"],
-                compliance_brief=enrichment["compliance_brief"],
-                news_brief=enrichment["news_brief"],
+                channel=outbound_channel,
+                hiring_signal_brief=enrichment["hiring_signal_brief"],
+                competitor_gap_brief=enrichment.get("competitor_gap_brief"),
                 conversation_turns=[asdict(t) for t in conv.turns],
                 available_slots=slots,
             )
 
-            parsed, raw_text = self._call_llm(user_prompt)
-            reply = parsed.get("reply")
-            policy = check_reply(
-                reply or "",
-                enrichment_brief=enrichment["enrichment_brief"],
-                compliance_brief=enrichment["compliance_brief"],
+            parsed, _raw = self._call_llm(user_prompt)
+            subject = parsed.get("subject")
+            body = parsed.get("body") or ""
+            channel_out = parsed.get("channel") or outbound_channel
+            if channel_out not in ("email", "sms"):
+                channel_out = outbound_channel
+
+            policy = check_outbound(
+                channel=channel_out,
+                subject=subject,
+                body=body,
+                hiring_signal_brief=enrichment["hiring_signal_brief"],
+                competitor_gap_brief=enrichment.get("competitor_gap_brief"),
             )
-            regen_info: Optional[dict] = None
+            regen_info = None
             if not policy.ok:
-                log.warning("policy violations: %s; regenerating", policy.violations)
-                redo_prompt = (
+                log.warning("policy violations, regenerating: %s", policy.violations)
+                redo = (
                     user_prompt
                     + "\n\nPREVIOUS_DRAFT_REJECTED:\n"
-                    + json.dumps({"draft": reply, "violations": policy.violations}, indent=2)
-                    + "\n\nRewrite strictly within the HARD RULES."
+                    + json.dumps({"subject": subject, "body": body, "violations": policy.violations}, indent=2)
+                    + "\n\nRewrite strictly within the HARD RULES. Do not repeat the rejected phrasing."
                 )
-                parsed, raw_text = self._call_llm(redo_prompt)
-                reply = parsed.get("reply")
-                policy2 = check_reply(
-                    reply or "",
-                    enrichment_brief=enrichment["enrichment_brief"],
-                    compliance_brief=enrichment["compliance_brief"],
+                parsed2, _raw2 = self._call_llm(redo)
+                subject2 = parsed2.get("subject") or subject
+                body2 = parsed2.get("body") or ""
+                channel_out2 = parsed2.get("channel") or channel_out
+                policy2 = check_outbound(
+                    channel=channel_out2,
+                    subject=subject2,
+                    body=body2,
+                    hiring_signal_brief=enrichment["hiring_signal_brief"],
+                    competitor_gap_brief=enrichment.get("competitor_gap_brief"),
                 )
-                regen_info = {"first_violations": policy.violations, "resolved": policy2.ok}
-                if not policy2.ok:
-                    log.error("policy still failing; dropping reply")
-                    reply = None
+                regen_info = {"first_violations": policy.violations, "resolved": policy2.ok, "second_violations": policy2.violations}
+                if policy2.ok:
+                    parsed, subject, body, channel_out = parsed2, subject2, body2, channel_out2
+                else:
+                    log.error("policy still failing after regen; dropping outbound")
+                    body = ""
 
             booking: Optional[Booking] = None
             if parsed.get("intent") == "book" and parsed.get("book_slot"):
                 booking = self.calcom.book(
                     start_at=parsed["book_slot"],
                     name=conv.company or "Prospect",
-                    email=email or f"{phone}@sink.test",
-                    phone=phone,
+                    email=email or f"{contact_key}@sink.test",
+                    phone=phone or "",
                     company=conv.company,
                 )
                 conv.booked = booking.booking_id is not None and booking.error in (None, "dry_run")
+                conv.stage = "booked"
 
             contact = self.hubspot.upsert_contact(
-                phone=phone,
+                phone=phone or "",
                 email=email,
                 company=conv.company,
                 crunchbase_id=conv.crunchbase_id,
-                compliance_brief=enrichment["compliance_brief"],
                 stage=conv.stage,
             )
-            if contact.contact_id and reply:
-                self.hubspot.log_note(contact.contact_id, f"Inbound: {text}\nOutbound: {reply}")
+            if contact.contact_id and body:
+                self.hubspot.log_note(
+                    contact.contact_id,
+                    f"Channel: {channel_out}\nInbound: {inbound_text or '(outbound-first)'}\n"
+                    f"Subject: {subject or '-'}\nOutbound: {body}",
+                )
 
             send_result = None
-            if reply:
-                send_result = self.sms.send(phone, reply)
-                conv.turns.append(state.Turn(role="agent", text=reply, at=datetime.now(tz=timezone.utc).isoformat(), trace_id=trace_id))
+            if body:
+                if channel_out == "email":
+                    send_result = self.email.send(
+                        to=email or contact_key,
+                        subject=subject or "(no subject)",
+                        html=f"<p>{body.replace(chr(10), '</p><p>')}</p>",
+                        text=body,
+                    )
+                else:
+                    send_result = self.sms.send(phone or contact_key, body)
+
+                conv.turns.append(state.Turn(
+                    role="agent",
+                    text=body,
+                    at=datetime.now(tz=timezone.utc).isoformat(),
+                    trace_id=trace_id,
+                ))
                 conv.last_outbound_at = datetime.now(tz=timezone.utc).isoformat()
 
             state.save(conv)
-
             latency_ms = (datetime.now(tz=timezone.utc) - started).total_seconds() * 1000
             result = {
                 "trace_id": trace_id,
-                "kind": "message",
-                "reply": reply,
+                "channel_in": channel_in,
+                "channel_out": channel_out,
+                "subject": subject,
+                "reply": body,
                 "intent": parsed.get("intent"),
+                "segment_used": parsed.get("segment_used"),
                 "booking": asdict(booking) if booking else None,
                 "policy": {"regen": regen_info} if regen_info else {"ok": True},
                 "hubspot_contact_id": contact.contact_id,
                 "latency_ms": latency_ms,
                 "send_result": asdict(send_result) if send_result else None,
+                "enrichment_summary": {
+                    "crunchbase_id": conv.crunchbase_id,
+                    "icp_assignments": enrichment.get("hiring_signal_brief", {}).get("icp_assignments"),
+                    "ai_maturity": (enrichment.get("hiring_signal_brief", {}).get("ai_maturity") or {}).get("score"),
+                    "peer_count": (enrichment.get("competitor_gap_brief") or {}).get("peer_count"),
+                },
             }
             try:
                 trace.update(output=json.dumps(result, default=str), metadata={"latency_ms": latency_ms})
@@ -177,18 +260,32 @@ class Orchestrator:
             return result
 
     def _call_llm(self, user_prompt: str) -> tuple[dict, str]:
-        resp = self.llm.complete(
-            system=SYSTEM_PROMPT,
-            user=user_prompt,
-            max_tokens=400,
-            temperature=0.2,
-        )
-        raw = resp.text.strip()
-        parsed: dict
+        try:
+            resp = self.llm.complete(
+                system=SYSTEM_PROMPT,
+                user=user_prompt,
+                max_tokens=600,
+                temperature=0.2,
+            )
+            raw = resp.text.strip()
+        except Exception as e:
+            log.warning("LLM call failed: %s; using stub reply", e)
+            return (
+                {
+                    "channel": "email",
+                    "subject": "Quick note on your engineering capacity",
+                    "body": "Hi — saw your public careers page list several engineering openings. Open to a 30-minute call to hear what you're prioritizing this quarter? No pitch in the first call.",
+                    "intent": "greet",
+                    "segment_used": None,
+                    "book_slot": None,
+                    "confidence": 0.35,
+                    "reasoning": "LLM unavailable; canned neutral opener",
+                },
+                "",
+            )
         try:
             parsed = json.loads(raw)
         except Exception:
-            # Some models wrap JSON in fences
             cleaned = raw.strip("`")
             if cleaned.startswith("json"):
                 cleaned = cleaned[4:].strip()
@@ -196,5 +293,13 @@ class Orchestrator:
                 parsed = json.loads(cleaned)
             except Exception:
                 log.warning("LLM returned non-JSON; falling back")
-                parsed = {"reply": raw, "intent": "clarify", "book_slot": None, "confidence": 0.3, "reasoning": "parse_fail"}
+                parsed = {
+                    "channel": "email",
+                    "subject": "Quick note",
+                    "body": raw,
+                    "intent": "clarify",
+                    "book_slot": None,
+                    "confidence": 0.2,
+                    "reasoning": "parse_fail",
+                }
         return parsed, raw

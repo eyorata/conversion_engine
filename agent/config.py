@@ -18,6 +18,12 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: Optional[str] = None
     EVAL_MODEL: str = "claude-sonnet-4-6"
 
+    # Email (primary) — Resend free tier
+    RESEND_API_KEY: Optional[str] = None
+    RESEND_FROM_EMAIL: Optional[str] = None   # e.g. "partners@tenacious.example"
+    STAFF_SINK_EMAIL: Optional[str] = None    # kill-switch fallback
+
+    # SMS (secondary, warm-lead scheduling) — Africa's Talking sandbox
     AT_USERNAME: str = "sandbox"
     AT_API_KEY: Optional[str] = None
     AT_SHORTCODE: Optional[str] = None
@@ -33,10 +39,6 @@ class Settings(BaseSettings):
     LANGFUSE_PUBLIC_KEY: Optional[str] = None
     LANGFUSE_SECRET_KEY: Optional[str] = None
     LANGFUSE_HOST: str = "https://cloud.langfuse.com"
-
-    CFPB_API_BASE: str = (
-        "https://www.consumerfinance.gov/data-research/consumer-complaints/search/api/v1"
-    )
 
     LIVE_OUTBOUND: bool = False
     STAFF_SINK_NUMBER: Optional[str] = None

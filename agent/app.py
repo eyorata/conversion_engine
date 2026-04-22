@@ -1,7 +1,8 @@
-"""FastAPI app exposing the SMS webhook endpoint + health + synthetic trigger.
+"""FastAPI app exposing email + SMS webhooks.
 
-Africa's Talking sandbox POSTs form-encoded fields to the inbound URL:
-  from=+2517xxxxxxxx  to=<shortcode>  text=<message>  date=...  id=...  linkId=...
+Email webhook: Resend sends inbound reply forwards via webhooks. For the challenge
+we accept a generic POST with {from, subject, text}.
+SMS webhook: Africa's Talking sandbox POSTs form-encoded {from, to, text}.
 """
 from __future__ import annotations
 
@@ -15,7 +16,7 @@ from agent.orchestrator import Orchestrator
 setup_logging()
 log = logging.getLogger(__name__)
 
-app = FastAPI(title="Acme ComplianceOS SDR Agent", version="0.1.0")
+app = FastAPI(title="Tenacious SDR Agent", version="0.1.0")
 _orchestrator: Orchestrator | None = None
 
 
@@ -31,33 +32,61 @@ def health() -> dict:
     return {"status": "ok"}
 
 
+@app.post("/email/inbound")
+async def email_inbound(request: Request) -> dict:
+    """Generic email reply webhook. Accepts JSON."""
+    payload = await request.json()
+    from_addr = payload.get("from") or payload.get("email")
+    subject = payload.get("subject") or ""
+    text = payload.get("text") or payload.get("body") or ""
+    if not from_addr or not text:
+        raise HTTPException(status_code=400, detail="missing from/text")
+    result = get_orchestrator().handle_turn(
+        channel_in="email",
+        inbound_text=f"Re: {subject}\n\n{text}" if subject else text,
+        contact_key=from_addr,
+        email=from_addr,
+    )
+    return result
+
+
 @app.post("/sms/inbound")
-async def sms_inbound(
-    request: Request,
-) -> dict:
+async def sms_inbound(request: Request) -> dict:
     """Africa's Talking webhook. Accepts form or JSON."""
-    content_type = request.headers.get("content-type", "")
-    if "application/json" in content_type:
+    ct = request.headers.get("content-type", "")
+    if "application/json" in ct:
         payload = await request.json()
     else:
-        form = await request.form()
-        payload = dict(form)
-
+        payload = dict(await request.form())
     phone = payload.get("from") or payload.get("phone")
     text = payload.get("text") or payload.get("message") or ""
     if not phone or not text:
         raise HTTPException(status_code=400, detail="missing from/text")
-
-    result = get_orchestrator().handle_inbound(phone=phone, text=text)
+    result = get_orchestrator().handle_turn(
+        channel_in="sms",
+        inbound_text=text,
+        contact_key=phone,
+        phone=phone,
+    )
     return result
 
 
-@app.post("/synthetic/inbound")
-async def synthetic_inbound(
-    phone: str = Form(...),
-    text: str = Form(...),
+@app.post("/synthetic/turn")
+async def synthetic_turn(
+    contact_key: str = Form(...),
+    channel_in: str = Form(...),
+    inbound_text: str = Form(...),
     email: str | None = Form(default=None),
+    phone: str | None = Form(default=None),
     company: str | None = Form(default=None),
+    domain: str | None = Form(default=None),
 ) -> dict:
-    """Test endpoint used by scripts/synthetic_conversation.py."""
-    return get_orchestrator().handle_inbound(phone=phone, text=text, email=email, company_hint=company)
+    return get_orchestrator().handle_turn(
+        channel_in=channel_in,
+        inbound_text=inbound_text,
+        contact_key=contact_key,
+        email=email,
+        phone=phone,
+        company_hint=company,
+        domain_hint=domain,
+    )
