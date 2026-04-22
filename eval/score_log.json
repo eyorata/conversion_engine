@@ -1,0 +1,37 @@
+[
+  {
+    "slice": "dev",
+    "mode": "dry_run",
+    "model": "qwen/qwen3-next-80b-a3b",
+    "trials": 3,
+    "tasks_per_trial": 10,
+    "pass_at_1_mean": 0.0,
+    "pass_at_1_ci95": 0.0,
+    "cost_total_usd": 0.0,
+    "cost_per_run_usd": 0.0,
+    "latency_p50_ms": 3001.6,
+    "latency_p95_ms": 3003.0,
+    "trials_summary": [
+      {
+        "trial": 0,
+        "pass_rate": 0.0,
+        "cost_usd": 0.0,
+        "mean_latency_ms": 3002.1
+      },
+      {
+        "trial": 1,
+        "pass_rate": 0.0,
+        "cost_usd": 0.0,
+        "mean_latency_ms": 3001.7
+      },
+      {
+        "trial": 2,
+        "pass_rate": 0.0,
+        "cost_usd": 0.0,
+        "mean_latency_ms": 3001.4
+      }
+    ],
+    "run_id": "dev-20260422T170913",
+    "at": "2026-04-22T17:09:13.282595+00:00"
+  }
+]

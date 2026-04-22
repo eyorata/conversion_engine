@@ -103,17 +103,30 @@ def _check_openrouter() -> CheckResult:
         return CheckResult("openrouter", False, f"OpenRouter error: {e}")
 
 
-def _check_cfpb() -> CheckResult:
+def _check_resend() -> CheckResult:
+    if not settings.RESEND_API_KEY:
+        return CheckResult("resend", False, "RESEND_API_KEY unset")
     try:
-        from enrichment.cfpb import fetch_compliance_brief
-        brief = fetch_compliance_brief("Wells Fargo", window_days=30)
-        return CheckResult(
-            "cfpb",
-            True,
-            f"Wells Fargo 30d complaints={brief.complaint_count}, top={[x['issue'] for x in brief.top_issues]}",
+        import httpx
+        r = httpx.get(
+            "https://api.resend.com/domains",
+            headers={"Authorization": f"Bearer {settings.RESEND_API_KEY}"},
+            timeout=10.0,
         )
+        r.raise_for_status()
+        return CheckResult("resend", True, f"Resend /domains reachable ({r.status_code})")
     except Exception as e:
-        return CheckResult("cfpb", False, f"CFPB error: {e}")
+        return CheckResult("resend", False, f"Resend error: {e}")
+
+
+def _check_layoffs() -> CheckResult:
+    try:
+        from enrichment.layoffs import LayoffsIndex
+        idx = LayoffsIndex.load()
+        n_companies = len(idx.by_name)
+        return CheckResult("layoffs", n_companies > 0, f"loaded {n_companies} companies")
+    except Exception as e:
+        return CheckResult("layoffs", False, f"Layoffs error: {e}")
 
 
 def _check_crunchbase() -> CheckResult:
@@ -128,12 +141,13 @@ def _check_crunchbase() -> CheckResult:
 
 
 CHECKS: dict[str, Callable[[], CheckResult]] = {
+    "resend": _check_resend,
     "sms": _check_sms,
     "hubspot": _check_hubspot,
     "calcom": _check_calcom,
     "langfuse": _check_langfuse,
     "openrouter": _check_openrouter,
-    "cfpb": _check_cfpb,
+    "layoffs": _check_layoffs,
     "crunchbase": _check_crunchbase,
 }
 

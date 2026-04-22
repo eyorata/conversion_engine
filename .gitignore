@@ -56,6 +56,9 @@ Thumbs.db
 # τ²-Bench (cloned as external)
 tau2-bench/
 
+# Cal.com (cloned as external for local dev)
+cal.com/
+
 # Logs
 *.log
 logs/
