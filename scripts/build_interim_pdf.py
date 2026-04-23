@@ -163,6 +163,34 @@ def build() -> Path:
         body,
     ))
 
+    # Rubric self-assessment
+    story.append(Paragraph("Rubric self-assessment", h2))
+    rubric_rows = [
+        ["Rubric item", "Target", "Evidence"],
+        ["Outbound email handler", "Mastered",
+         "Resend provider; /email/inbound distinguishes bounce / complaint / delivered / reply; send errors and malformed payloads handled without silent failure"],
+        ["SMS handler", "Mastered",
+         "Africa's Talking; bidirectional; hard gate forces email when LLM picks SMS for a cold prospect; warm-lead (prior email reply) unlocks SMS"],
+        ["CRM + calendar", "Competent",
+         "HubSpot writes icp_segment, ai_maturity_score, funding/layoff/job/leadership signals, last_enriched_at, tenacious_booking_id. Booking triggers HubSpot upsert on same contact_id. MCP migration is a Day-2 item"],
+        ["Signal enrichment", "Mastered",
+         "All 4 sources (Crunchbase ODM, Playwright jobs, layoffs.fyi, leadership); no login/captcha-bypass; per-signal confidence in the merged brief"],
+    ]
+    rt = Table(rubric_rows, colWidths=[1.5*inch, 1.0*inch, 5.0*inch])
+    rt.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#eeeeee")),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+    ]))
+    story.append(rt)
+    story.append(Spacer(1, 0.08 * inch))
+
     # Stack status table
     story.append(Paragraph("Production stack status", h2))
     stack_rows = [

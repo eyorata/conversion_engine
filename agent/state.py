@@ -26,6 +26,7 @@ class Turn:
     text: str
     at: str  # ISO timestamp
     trace_id: Optional[str] = None
+    channel: Optional[str] = None  # "email" | "sms" — needed for warm-lead gate
 
 
 @dataclass
@@ -34,9 +35,10 @@ class Conversation:
     opted_out: bool = False
     qualified: bool = False
     booked: bool = False
+    undeliverable: bool = False  # set True by bounce/complaint events
     crunchbase_id: Optional[str] = None
     company: Optional[str] = None
-    stage: str = "new"  # new | enriched | qualifying | booked | closed | opted_out
+    stage: str = "new"  # new | enriched | qualifying | booked | closed | opted_out | undeliverable
     last_outbound_at: Optional[str] = None
     attempts: int = 0
     turns: list[Turn] = field(default_factory=list)

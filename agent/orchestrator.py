@@ -80,6 +80,7 @@ class Orchestrator:
                     text=inbound_text,
                     at=started.isoformat(),
                     trace_id=trace_id,
+                    channel=channel_in,
                 ))
 
             # unsubscribe handling
@@ -89,7 +90,7 @@ class Orchestrator:
                 self.sms.send(phone or contact_key, _STOP_REPLY_SMS)
                 conv.turns.append(state.Turn(role="agent", text=_STOP_REPLY_SMS,
                                              at=datetime.now(tz=timezone.utc).isoformat(),
-                                             trace_id=trace_id))
+                                             trace_id=trace_id, channel="sms"))
                 state.save(conv)
                 return {"trace_id": trace_id, "kind": "stop", "channel_out": "sms"}
             if channel_in == "email" and inbound_text and classify_email_reply(inbound_text) == "unsubscribe":
@@ -103,12 +104,15 @@ class Orchestrator:
                 )
                 conv.turns.append(state.Turn(role="agent", text=_STOP_REPLY_EMAIL_BODY,
                                              at=datetime.now(tz=timezone.utc).isoformat(),
-                                             trace_id=trace_id))
+                                             trace_id=trace_id, channel="email"))
                 state.save(conv)
                 return {"trace_id": trace_id, "kind": "stop", "channel_out": "email"}
 
             if conv.opted_out:
                 return {"trace_id": trace_id, "kind": "ignored_opted_out"}
+
+            if conv.undeliverable:
+                return {"trace_id": trace_id, "kind": "ignored_undeliverable"}
 
             # enrich on first touch
             enrichment = {"hiring_signal_brief": {}, "competitor_gap_brief": None}
@@ -130,10 +134,16 @@ class Orchestrator:
                     enrichment["hiring_signal_brief"] = {"match": "no_crunchbase_hit", "error": str(e)}
 
             slots = self.calcom.available_slots()
-            # Decide preferred outbound channel: email for cold/inbound-email,
-            # SMS only if prospect has already engaged and asked for scheduling
+            # Channel hierarchy: SMS is warm-lead scheduling ONLY. Warm lead is
+            # defined as a prospect who has previously replied via email
+            # (not counting the current inbound). Everything else is email.
+            prior_email_reply = any(
+                (t.role == "user" and t.channel == "email")
+                for t in conv.turns[:-1]  # exclude the current inbound (already appended)
+            )
+            is_warm_lead = prior_email_reply
             outbound_channel = "email"
-            if channel_in == "sms" and conv.stage in ("enriched", "qualifying"):
+            if channel_in == "sms" and is_warm_lead:
                 outbound_channel = "sms"
 
             user_prompt = build_user_prompt(
@@ -150,6 +160,14 @@ class Orchestrator:
             channel_out = parsed.get("channel") or outbound_channel
             if channel_out not in ("email", "sms"):
                 channel_out = outbound_channel
+            # HARD GATE: LLM cannot escalate a cold contact to SMS. If the
+            # prospect hasn't replied via email yet, force email regardless
+            # of what the LLM asked for.
+            if channel_out == "sms" and not is_warm_lead:
+                log.warning("LLM picked sms for cold prospect; forcing email (channel hierarchy)")
+                channel_out = "email"
+                if parsed.get("channel") == "sms":
+                    parsed["channel"] = "email"
 
             policy = check_outbound(
                 channel=channel_out,
@@ -198,11 +216,13 @@ class Orchestrator:
                 conv.stage = "booked"
 
             contact = self.hubspot.upsert_contact(
-                phone=phone or "",
+                phone=phone or None,
                 email=email,
                 company=conv.company,
                 crunchbase_id=conv.crunchbase_id,
                 stage=conv.stage,
+                hiring_signal_brief=enrichment.get("hiring_signal_brief"),
+                booking_id=(booking.booking_id if booking else None),
             )
             if contact.contact_id and body:
                 self.hubspot.log_note(
@@ -228,6 +248,7 @@ class Orchestrator:
                     text=body,
                     at=datetime.now(tz=timezone.utc).isoformat(),
                     trace_id=trace_id,
+                    channel=channel_out,
                 ))
                 conv.last_outbound_at = datetime.now(tz=timezone.utc).isoformat()
 

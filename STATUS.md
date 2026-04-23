@@ -67,7 +67,23 @@ run their own. Evaluation in Act IV uses 1 trial, not 5. Budget is $10/person.
 
 ## Tests
 
-28 passing. Covers kill switch (both channels), STOP classifier, Tenacious
-policy (hiring/funding/layoff/leadership over-claims, capacity commitment,
-pricing, style filler, gap disparagement, length budgets), ICP classifier
-across all four segments.
+34 passing. Covers:
+- Kill switch on both channels (5 tests) — default-deny, force-sink, drop if no sink
+- STOP/HELP classifier (4 tests)
+- Tenacious policy (13 tests) — hiring, funding, layoff, leadership
+  over-claims, capacity commitment, pricing, style filler, gap disparagement,
+  per-channel length
+- ICP classifier (6 tests) — all four segments + Segment 4 AI-maturity gate
+- **Webhook events (4 tests)** — email bounce marks undeliverable, complaint
+  opts-out, delivered/opened acked-not-orchestrated, malformed returns 400
+- **SMS channel-hierarchy gate (2 tests)** — cold contact forced to email
+  even when LLM picks SMS; warm contact (prior email reply) can receive SMS
+
+## Rubric self-assessment
+
+| Rubric | Target | Evidence |
+|--------|--------|----------|
+| Outbound email handler | Mastered | Resend provider; `/email/inbound` handles bounce / complaint / delivered / reply distinctly; send error + malformed payload handled |
+| SMS handler | Mastered | Africa's Talking; bidirectional; **hard SMS gate on prior-email-reply** (orchestrator line refuses LLM's SMS choice for cold contacts, forces email) |
+| CRM + calendar | Competent (→ Mastered after MCP migration) | HubSpot writes now include `icp_segment`, `icp_confidence`, `ai_maturity_score`, `ai_maturity_confidence`, `last_funding_type`, `layoffs_event_count_120d`, `job_velocity_ratio`, `leadership_change_role`, `last_enriched_at`, `tenacious_booking_id`. Booking → HubSpot upsert links same `contact_id`. Still REST, not MCP — Day-2 item. |
+| Signal enrichment | Mastered | All 4 sources (Crunchbase ODM, Playwright jobs, layoffs.fyi CSV, leadership overrides+press); no login/bypass; merged `hiring_signal_brief` with per-signal `confidence` field |
