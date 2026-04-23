@@ -3,10 +3,15 @@
 Wraps the Sierra Research τ²-Bench harness
 (https://github.com/sierra-research/tau2-bench).
 
+Program update 2026-04-23: trainees no longer run their own baseline. The
+authoritative baseline lives in `eval/baseline.md` + `eval/score_log.json`
++ `eval/trace_log.jsonl` (provided). This runner is retained for Act IV
+held-out evaluation of a trainee mechanism at **1 trial per task** (not 5).
+
 Design:
   - Partitions retail tasks into a 30-task dev slice and a 20-task held-out slice.
-  - Dev slice is run by trainees freely.
-  - Held-out slice is sealed — no evaluation against it until Act IV scoring.
+  - Dev slice: free use during development (tests, probes, ablations).
+  - Held-out slice: sealed; evaluated once at Act IV with trials=1.
 
 This runner calls the tau2-bench harness when it's installed (discoverable via
 `import tau2`). If the harness isn't available yet (e.g. on CI before Day 0
@@ -265,7 +270,8 @@ def run(
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--slice", default="dev", choices=["dev", "held_out"])
-    ap.add_argument("--trials", type=int, default=5)
+    ap.add_argument("--trials", type=int, default=1,
+                    help="Trials per task. Program update 2026-04-23: use 1 for Act IV evaluation.")
     ap.add_argument("--num-tasks", type=int, default=None,
                     help="Override task count (default: 30 for dev, 20 for held_out)")
     ap.add_argument("--out", type=Path, default=Path("eval/score_log.json"))

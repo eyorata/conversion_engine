@@ -101,9 +101,17 @@ SMS rig and email sink receive all outbound. See [docs/data_policy.md](docs/data
 
 ## Cost envelope
 
-≤ $20 total. Dev-tier LLM (OpenRouter Qwen3 / DeepSeek) for Days 1–4 (≤$4).
-Eval-tier (Claude Sonnet 4.6) for the sealed held-out run only (≤$12).
-Per-trace cost attribution via Langfuse.
+≤ $10 total per the 2026-04-23 program update. Dev-tier LLM (OpenRouter
+Qwen3 / DeepSeek) for Days 1–4. Eval-tier (Claude Sonnet 4.6) for the
+sealed held-out run only, trials=1. Per-trace cost attribution via Langfuse.
+
+## τ²-Bench baseline
+
+Per the 2026-04-23 program update, the baseline is provided by staff and
+lives in [eval/baseline.md](eval/baseline.md), [eval/score_log.json](eval/score_log.json),
+and [eval/trace_log.jsonl](eval/trace_log.jsonl). Trainees do not re-run it.
+Reference: pass@1 = 0.727, 95% CI [0.65, 0.79], 30 retail tasks × 5 trials,
+avg cost $0.02/run. Act IV held-out evaluation runs at **trials = 1**.
 
 ## Status
 

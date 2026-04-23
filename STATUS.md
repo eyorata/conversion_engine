@@ -17,11 +17,15 @@ Last updated: 2026-04-22 (interim day, Tenacious edition)
 
 ## Act I — τ²-Bench baseline
 
+Program update 2026-04-23: baseline is provided by staff; trainees no longer
+run their own. Evaluation in Act IV uses 1 trial, not 5. Budget is $10/person.
+
 | Deliverable | Status |
 |-------------|--------|
-| `eval/score_log.json` (dev-tier baseline + reproduction check, 95% CI) | in progress |
-| `eval/trace_log.jsonl` (full dev-slice trajectories) | in progress |
-| `eval/baseline.md` (≤400 words) | in progress |
+| `eval/score_log.json` (provided: pass@1=0.7267, 95% CI [0.65, 0.79]) | committed as given |
+| `eval/trace_log.jsonl` (provided: 150 simulations across 30 retail tasks) | committed as given |
+| `eval/baseline.md` (provided) | committed as given |
+| `eval/tau2_runner.py` (retained for Act IV 1-trial held-out eval) | scaffolded |
 
 ## Act II — Production stack + enrichment
 
