@@ -59,6 +59,10 @@ tau2-bench/
 # Cal.com (cloned as external for local dev)
 cal.com/
 
+# Tenacious seed materials — limited license per tenacious_sales_data/LICENSE.md.
+# Must not be in a public repo. Kept locally for challenge-week use.
+tenacious_sales_data/
+
 # Logs
 *.log
 logs/
