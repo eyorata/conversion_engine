@@ -33,8 +33,8 @@ run their own. Evaluation in Act IV uses 1 trial, not 5. Budget is $10/person.
 |-------------|--------|
 | Email (Resend) primary — handler + kill switch | scaffolded + tested |
 | SMS (Africa's Talking) secondary — handler + kill switch + STOP/HELP | scaffolded + tested |
-| HubSpot contact upsert + note logging | scaffolded |
-| Cal.com booking | scaffolded |
+| HubSpot contact upsert + note logging | working (REST SDK + custom property provisioning) |
+| Cal.com booking | working (slot lookup, booking create, booking webhook) |
 | Crunchbase ODM enrichment | working (CSV loader, 1000 records) |
 | layoffs.fyi signal (120d) | working (with seed fallback) |
 | Job-post velocity (60d) | working (frozen snapshot + live mode) |
@@ -85,5 +85,5 @@ run their own. Evaluation in Act IV uses 1 trial, not 5. Budget is $10/person.
 |--------|--------|----------|
 | Outbound email handler | Mastered | Resend provider; `/email/inbound` handles bounce / complaint / delivered / reply distinctly; send error + malformed payload handled |
 | SMS handler | Mastered | Africa's Talking; bidirectional; **hard SMS gate on prior-email-reply** (orchestrator line refuses LLM's SMS choice for cold contacts, forces email) |
-| CRM + calendar | Competent (→ Mastered after MCP migration) | HubSpot writes now include `icp_segment`, `icp_confidence`, `ai_maturity_score`, `ai_maturity_confidence`, `last_funding_type`, `layoffs_event_count_120d`, `job_velocity_ratio`, `leadership_change_role`, `last_enriched_at`, `tenacious_booking_id`. Booking → HubSpot upsert links same `contact_id`. Still REST, not MCP — Day-2 item. |
+| CRM + calendar | Competent | HubSpot writes now include `icp_segment`, `icp_confidence`, `ai_maturity_score`, `ai_maturity_confidence`, `last_funding_type`, `layoffs_event_count_120d`, `job_velocity_ratio`, `leadership_change_role`, `last_enriched_at`, `tenacious_booking_id`. Booking -> HubSpot upsert links same `contact_id`; Cal.com booking lifecycle now has an inbound webhook route. Still REST, not MCP. |
 | Signal enrichment | Mastered | All 4 sources (Crunchbase ODM, Playwright jobs, layoffs.fyi CSV, leadership overrides+press); no login/bypass; merged `hiring_signal_brief` with per-signal `confidence` field |

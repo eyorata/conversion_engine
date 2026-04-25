@@ -1,0 +1,159 @@
+# Held-out probe set for the Dual-Control Commitment Gate (DCCG) ablation.
+#
+# 12 deferral variants — gate must SUPPRESS booking (intent should NOT be "book")
+# 6 acceptance variants — gate must NOT fire (intent SHOULD be "book")
+#
+# Each variant pairs a deferral or acceptance phrase with a representative
+# Tenacious ICP scenario from tenacious_sales_data/seed/icp_definition.md.
+# Variants are sealed: they're not in probes/probes.yaml so we can claim
+# generalization beyond the dev probe set.
+
+trials_per_arm: 5
+
+# ---------- Group 1: deferral variants (gate SHOULD fire) ----------
+deferral_probes:
+- id: H1.1
+  scenario_label: series_b_let_me_check
+  hiring_signal_brief:
+    funding_signal: { last_funding_type: series_b, last_funding_at: "2026-01-15", total_funding_usd: 18000000 }
+    jobs_signal: { total_roles_current: 6, confidence: medium }
+    ai_maturity: { score: 2, confidence: medium }
+  inbound: "Interested in your pitch. Let me check my calendar this week and get back to you."
+
+- id: H1.2
+  scenario_label: post_layoff_thinking_about_it
+  hiring_signal_brief:
+    funding_signal: { last_funding_type: series_c, last_funding_at: "2025-09-01" }
+    layoffs_signal: { event_count: 1, events: [{date: "2026-02-01", percentage: 0.12}], confidence: high }
+    jobs_signal: { total_roles_current: 4, confidence: medium }
+    ai_maturity: { score: 1, confidence: medium }
+  inbound: "Thinking about it. I'll let you know."
+
+- id: H1.3
+  scenario_label: new_cto_checking_with_team
+  hiring_signal_brief:
+    leadership_signal: { recent_change: true, role: "CTO", days_ago: 45, confidence: high }
+    jobs_signal: { total_roles_current: 5, confidence: medium }
+    ai_maturity: { score: 2, confidence: medium }
+  inbound: "Sounds reasonable. Let me check with my team and circle back."
+
+- id: H1.4
+  scenario_label: project_consulting_circle_back
+  hiring_signal_brief:
+    jobs_signal: { total_roles_current: 8, ai_role_share: 0.4, confidence: high }
+    ai_maturity: { score: 3, confidence: high }
+  competitor_gap_brief:
+    gaps: [{practice: "dedicated MLOps platform", supporters: 3}]
+  inbound: "Will circle back next week."
+
+- id: H1.5
+  scenario_label: founder_busy_week
+  hiring_signal_brief:
+    funding_signal: { last_funding_type: series_a, last_funding_at: "2026-02-10", total_funding_usd: 9000000 }
+    jobs_signal: { total_roles_current: 5, confidence: medium }
+    ai_maturity: { score: 1, confidence: medium }
+  inbound: "Yeah this could be useful. This week is tight — I'll reach out when things settle."
+
+- id: H1.6
+  scenario_label: vp_eng_need_to_confirm
+  hiring_signal_brief:
+    leadership_signal: { recent_change: true, role: "VP Engineering", days_ago: 60, confidence: high }
+    jobs_signal: { total_roles_current: 6, confidence: medium }
+    ai_maturity: { score: 2, confidence: medium }
+  inbound: "I need to confirm with the CFO before any meetings get scheduled."
+
+- id: H1.7
+  scenario_label: ml_team_hold_off
+  hiring_signal_brief:
+    jobs_signal: { total_roles_current: 7, ai_role_share: 0.4, confidence: high }
+    ai_maturity: { score: 3, confidence: high }
+  inbound: "Hold off on scheduling — I want to read through your case studies first."
+
+- id: H1.8
+  scenario_label: cfo_revisit_later
+  hiring_signal_brief:
+    funding_signal: { last_funding_type: series_b, last_funding_at: "2026-03-01" }
+    jobs_signal: { total_roles_current: 4, confidence: low }
+    ai_maturity: { score: 1, confidence: low }
+  inbound: "Let's revisit this after our board meeting."
+
+- id: H1.9
+  scenario_label: warm_lead_not_this_week
+  hiring_signal_brief:
+    funding_signal: { last_funding_type: series_a, last_funding_at: "2026-01-25" }
+    jobs_signal: { total_roles_current: 5, confidence: medium }
+    ai_maturity: { score: 2, confidence: medium }
+  inbound: "Not this week. Maybe the week after."
+
+- id: H1.10
+  scenario_label: post_layoff_maybe_next_month
+  hiring_signal_brief:
+    layoffs_signal: { event_count: 1, events: [{date: "2026-03-10", percentage: 0.20}], confidence: high }
+    jobs_signal: { total_roles_current: 3, confidence: medium }
+    ai_maturity: { score: 1, confidence: medium }
+  inbound: "Maybe next month — too much going on right now."
+
+- id: H1.11
+  scenario_label: founder_will_let_you_know
+  hiring_signal_brief:
+    funding_signal: { last_funding_type: series_a, last_funding_at: "2026-02-05" }
+    jobs_signal: { total_roles_current: 6, confidence: medium }
+    ai_maturity: { score: 2, confidence: medium }
+  inbound: "Sounds promising. I'll let you know once I've talked to the team."
+
+- id: H1.12
+  scenario_label: cto_thinking_through_options
+  hiring_signal_brief:
+    leadership_signal: { recent_change: true, role: "CTO", days_ago: 25, confidence: high }
+    jobs_signal: { total_roles_current: 7, confidence: high }
+    ai_maturity: { score: 2, confidence: medium }
+  inbound: "Thinking through options. Will reach out when I'm ready."
+
+# ---------- Group 2: explicit acceptance (gate must NOT fire) ----------
+acceptance_probes:
+- id: H2.1
+  scenario_label: explicit_iso_slot
+  hiring_signal_brief:
+    funding_signal: { last_funding_type: series_b, last_funding_at: "2026-02-01" }
+    jobs_signal: { total_roles_current: 6, confidence: medium }
+    ai_maturity: { score: 2, confidence: medium }
+  inbound: "Yes, 2026-04-28T10:00:00Z works. Please book it."
+
+- id: H2.2
+  scenario_label: yes_that_works
+  hiring_signal_brief:
+    jobs_signal: { total_roles_current: 5, confidence: medium }
+    ai_maturity: { score: 2, confidence: medium }
+  inbound: "Yes, that works for me. Let's confirm Tuesday at 10am UTC."
+
+- id: H2.3
+  scenario_label: lock_in_friday
+  hiring_signal_brief:
+    funding_signal: { last_funding_type: series_a, last_funding_at: "2026-02-15" }
+    jobs_signal: { total_roles_current: 5, confidence: medium }
+    ai_maturity: { score: 2, confidence: medium }
+  inbound: "Lock in Friday at 14:00 UTC."
+
+- id: H2.4
+  scenario_label: confirmed_with_check_phrase
+  hiring_signal_brief:
+    jobs_signal: { total_roles_current: 7, confidence: high }
+    ai_maturity: { score: 3, confidence: high }
+  # NOTE: contains "let me check" but ALSO an explicit accept; gate must NOT fire
+  inbound: "Confirmed. Let me check on the meeting room link with my team — proceed with booking."
+
+- id: H2.5
+  scenario_label: monday_at_three
+  hiring_signal_brief:
+    funding_signal: { last_funding_type: series_b, last_funding_at: "2026-03-01" }
+    jobs_signal: { total_roles_current: 6, confidence: medium }
+    ai_maturity: { score: 2, confidence: medium }
+  inbound: "Monday at 3pm works. Send the calendar invite."
+
+- id: H2.6
+  scenario_label: sounds_good_book_it
+  hiring_signal_brief:
+    leadership_signal: { recent_change: true, role: "CTO", days_ago: 30, confidence: high }
+    jobs_signal: { total_roles_current: 5, confidence: medium }
+    ai_maturity: { score: 2, confidence: medium }
+  inbound: "Sounds good. Book it."

@@ -35,8 +35,8 @@ SCENARIOS = [
     ("email", "unsubscribe", "ops@anthropic.com", None, "Anthropic"),
     ("email", "Interested — can we talk next week?", "vp@databricks.com", None, "Databricks"),
     ("email", "Who is this?", "cto@consolety.net", None, "Consolety"),
-    ("email", "We use our own offshore team. Nothing new here.", "vpe@winder.test", None, "Winder Research"),
-    ("email", "Pricing please.", "cfo@wiring.test", None, "Wiring Technologies"),
+    ("email", "We use our own offshore team. Nothing new here.", "vpe@winder-research.co", None, "Winder Research"),
+    ("email", "Pricing please.", "cfo@wiring-technologies.co", None, "Wiring Technologies"),
     ("sms", "Yes, scheduling works — Thursday 2pm UTC?", None, "+15551112222", "Example Prospect"),
     ("sms", "STOP", None, "+15553334444", None),
 ]

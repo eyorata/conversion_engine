@@ -12,32 +12,50 @@
 ### 1.1 Diagram
 
 ```mermaid
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": "Inter, -apple-system, Segoe UI, sans-serif",
+    "fontSize": "13px",
+    "primaryColor": "#eef2ff",
+    "primaryTextColor": "#1e293b",
+    "primaryBorderColor": "#6366f1",
+    "lineColor": "#64748b",
+    "clusterBkg": "#f8fafc",
+    "clusterBorder": "#cbd5e1"
+  },
+  "flowchart": { "curve": "basis", "nodeSpacing": 45, "rankSpacing": 55, "htmlLabels": true }
+}}%%
 flowchart TD
     %% ---------- entry points ----------
-    OB["Outbound seed<br/>(Crunchbase id)"] --> FIRST
-    IN_E["Inbound email reply<br/>POST /email/inbound"] --> EV{"Resend<br/>event type?"}
-    IN_S["Inbound SMS<br/>POST /sms/inbound"] --> FIRST
+    OB(["📤 Outbound seed<br/><span style='font-size:11px;color:#475569'>Crunchbase id</span>"]):::entry
+    IN_E(["📧 Inbound email reply<br/><span style='font-size:11px;color:#475569'>POST /email/inbound</span>"]):::entry
+    IN_S(["📱 Inbound SMS<br/><span style='font-size:11px;color:#475569'>POST /sms/inbound</span>"]):::entry
+
+    OB --> FIRST
+    IN_E --> EV{{"Resend<br/>event type?"}}:::decision
+    IN_S --> FIRST
 
     %% ---------- email event discrimination ----------
-    EV -- "email.bounced" --> UD["mark<br/>undeliverable"]
-    EV -- "email.complained" --> OO["mark<br/>opted_out"]
-    EV -- "email.delivered / opened" --> ACK["ack, don't orchestrate"]
+    EV -- "bounced" --> UD["⛔ mark<br/>undeliverable"]:::terminal
+    EV -- "complained" --> OO["🚫 mark<br/>opted_out"]:::terminal
+    EV -- "delivered / opened" --> ACK["✓ ack,<br/>don't orchestrate"]:::terminal
     EV -- "reply forward" --> FIRST
 
-    FIRST{"First touch<br/>or returning?"}
+    FIRST{{"First touch<br/>or returning?"}}:::decision
     FIRST -- "first" --> ENRICH
     FIRST -- "returning" --> AGENT
 
     %% ---------- enrichment pipeline ----------
-    subgraph ENRICH["Enrichment pipeline (first touch only)"]
+    subgraph ENRICH ["🔍 <b>Enrichment pipeline</b><br/><span style='font-size:11px;font-weight:normal'>first touch only</span>"]
         direction TB
-        CB["Crunchbase ODM<br/>1,000 records<br/>firmographics + funding"]
-        LF["layoffs.fyi CSV<br/>120-day window"]
-        JP["Job-post velocity<br/>Playwright, 60-day delta<br/>(no login, no captcha-bypass)"]
-        LC["Leadership change<br/>90-day window<br/>overrides + press"]
-        AM["AI maturity scorer<br/>0–3 with per-signal<br/>weight + confidence"]
-        ICP["ICP classifier<br/>4 segments"]
-        CG["Competitor gap brief<br/>top-quartile peers,<br/>≥2 supporters per gap"]
+        CB[("Crunchbase ODM<br/><span style='font-size:11px'>1,000 records · firmographics + funding</span>")]:::source
+        LF[("layoffs.fyi CSV<br/><span style='font-size:11px'>120-day window</span>")]:::source
+        JP[("Job-post velocity<br/><span style='font-size:11px'>Playwright · 60-day delta</span>")]:::source
+        LC[("Leadership change<br/><span style='font-size:11px'>90-day window · overrides + press</span>")]:::source
+        AM["AI maturity scorer<br/><span style='font-size:11px'>0–3 with per-signal weight + confidence</span>"]:::enrich
+        ICP["ICP classifier<br/><span style='font-size:11px'>4 segments</span>"]:::enrich
+        CG["Competitor gap brief<br/><span style='font-size:11px'>top-quartile peers · ≥2 supporters/gap</span>"]:::enrich
         CB --> AM
         CB --> ICP
         LF --> ICP
@@ -51,40 +69,48 @@ flowchart TD
     ENRICH --> AGENT
 
     %% ---------- agent ----------
-    subgraph AGENT["Agent orchestrator"]
+    subgraph AGENT ["🤖 <b>Agent orchestrator</b>"]
         direction TB
-        LLM["LLM call<br/>dev: OpenRouter Qwen3<br/>eval: Claude Sonnet 4.6"]
-        POL["Policy guardrail<br/>(over-claim + length regex)"]
-        REG{"Policy OK?"}
-        GATE["Hard SMS gate<br/>cold ⇒ force email"]
+        LLM["LLM call<br/><span style='font-size:11px'>dev: OpenRouter Qwen3<br/>eval: Claude Sonnet 4.6</span>"]:::agent
+        POL["Policy guardrail<br/><span style='font-size:11px'>over-claim + length regex</span>"]:::agent
+        REG{{"Policy OK?"}}:::decision
+        GATE["🔒 Hard SMS gate<br/><span style='font-size:11px'>cold ⇒ force email</span>"]:::agent
         LLM --> POL
         POL --> REG
-        REG -- "No (regen once)" --> LLM
+        REG -- "No · regen once" --> LLM
         REG -- "Yes" --> GATE
     end
 
     %% ---------- persistence ----------
-    AGENT --> HS["HubSpot upsert<br/>icp_segment, ai_maturity_score,<br/>funding/layoff/job/leadership,<br/>last_enriched_at, booking_id"]
-    AGENT --> CAL["Cal.com booking<br/>(intent=book)"]
+    AGENT --> HS["💾 HubSpot upsert<br/><span style='font-size:11px'>icp_segment · ai_maturity_score ·<br/>funding/layoff/job/leadership ·<br/>last_enriched_at · booking_id</span>"]:::persist
+    AGENT --> CAL["📅 Cal.com booking<br/><span style='font-size:11px'>intent = book</span>"]:::persist
     CAL --> HS
 
     %% ---------- channel hierarchy ----------
-    GATE -- "cold / first contact" --> CH_E["Email — PRIMARY<br/>Resend"]
-    GATE -- "warm lead<br/>(prior email reply)" --> CH_S["SMS — SECONDARY<br/>warm-lead scheduling only<br/>Africa's Talking"]
-    CAL --> CH_V["Voice — FINAL<br/>human Tenacious<br/>delivery lead"]
+    GATE -- "cold / first contact" ==> CH_E["📧 <b>Email — PRIMARY</b><br/><span style='font-size:11px'>Resend</span>"]:::channelPrimary
+    GATE -- "warm lead<br/>prior email reply" ==> CH_S["📱 <b>SMS — SECONDARY</b><br/><span style='font-size:11px'>warm-lead scheduling<br/>Africa's Talking</span>"]:::channelSecondary
+    CAL ==> CH_V["☎️ <b>Voice — FINAL</b><br/><span style='font-size:11px'>human Tenacious<br/>delivery lead</span>"]:::channelFinal
 
     %% ---------- cross-cutting ----------
-    CH_E -. "kill switch" .-> KS[("LIVE_OUTBOUND unset<br/>→ staff sink")]
+    CH_E -. "kill switch" .-> KS[("⚠️ LIVE_OUTBOUND unset<br/>→ staff sink")]:::crosscut
     CH_S -. "kill switch" .-> KS
-    AGENT -. "trace" .-> OBS[("Langfuse<br/>traces + cost")]
+    AGENT -. "trace" .-> OBS[("📊 Langfuse<br/>traces + cost")]:::crosscut
     ENRICH -. "trace" .-> OBS
 
-    classDef channelPrimary fill:#d7f2da,stroke:#2e7d32,stroke-width:2px;
-    classDef channelSecondary fill:#fff0c2,stroke:#b27b00,stroke-width:2px;
-    classDef channelFinal fill:#e3d7f4,stroke:#4a148c,stroke-width:2px;
-    class CH_E channelPrimary
-    class CH_S channelSecondary
-    class CH_V channelFinal
+    %% ---------- styling ----------
+    classDef entry           fill:#dbeafe,stroke:#2563eb,stroke-width:2px,color:#1e3a8a;
+    classDef decision        fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#78350f;
+    classDef terminal        fill:#fee2e2,stroke:#b91c1c,stroke-width:1.5px,color:#7f1d1d;
+    classDef source          fill:#ccfbf1,stroke:#0d9488,stroke-width:1.5px,color:#134e4a;
+    classDef enrich          fill:#a7f3d0,stroke:#047857,stroke-width:2px,color:#064e3b;
+    classDef agent           fill:#ede9fe,stroke:#7c3aed,stroke-width:2px,color:#4c1d95;
+    classDef persist         fill:#e0e7ff,stroke:#4f46e5,stroke-width:2px,color:#312e81;
+    classDef channelPrimary  fill:#86efac,stroke:#15803d,stroke-width:3px,color:#14532d;
+    classDef channelSecondary fill:#fde68a,stroke:#b45309,stroke-width:3px,color:#78350f;
+    classDef channelFinal    fill:#c4b5fd,stroke:#6d28d9,stroke-width:3px,color:#3b0764;
+    classDef crosscut        fill:#f1f5f9,stroke:#475569,stroke-width:1.5px,color:#334155,stroke-dasharray:3 3;
+
+    linkStyle default stroke:#64748b,stroke-width:1.5px;
 ```
 
 Data flow is directional throughout. Solid arrows = runtime control/data flow;

@@ -16,6 +16,8 @@ from __future__ import annotations
 import json
 import logging
 import re
+import urllib.parse
+import urllib.robotparser
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -136,19 +138,25 @@ def fetch_job_posts_signal(
 def _playwright_titles(url: str) -> list[str]:
     from playwright.sync_api import sync_playwright
 
+    if not _robots_allows(url):
+        raise RuntimeError(f"robots.txt disallows crawl: {url}")
+
     titles: list[str] = []
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        page = browser.new_context(
+        context = browser.new_context(
             user_agent=(
                 "Mozilla/5.0 (compatible; TenaciousOutboundBot/0.1; "
                 "+https://example.test/bot)"
             )
-        ).new_page()
+        )
+        page = context.new_page()
         try:
             page.goto(url, wait_until="domcontentloaded", timeout=10000)
-            # Many job boards use <a>/<li>/<h3> with role titles
-            for sel in ["a", "h2", "h3", "li", "div"]:
+            # Stay on one public page only. We do not authenticate, paginate,
+            # or click through anti-bot flows. Selectors are source-aware for
+            # BuiltIn, Wellfound, LinkedIn, and a generic public-careers fallback.
+            for sel in _selectors_for_url(page.url):
                 nodes = page.locator(sel).all()
                 for n in nodes[:200]:
                     try:
@@ -162,6 +170,7 @@ def _playwright_titles(url: str) -> list[str]:
                 if titles:
                     break
         finally:
+            context.close()
             browser.close()
     # Dedup, preserve order
     seen: set[str] = set()
@@ -173,6 +182,30 @@ def _playwright_titles(url: str) -> list[str]:
         seen.add(key)
         out.append(t)
     return out
+
+
+def _robots_allows(url: str) -> bool:
+    parsed = urllib.parse.urlparse(url)
+    robots_url = urllib.parse.urljoin(f"{parsed.scheme}://{parsed.netloc}", "/robots.txt")
+    try:
+        parser = urllib.robotparser.RobotFileParser()
+        parser.set_url(robots_url)
+        parser.read()
+        return parser.can_fetch("TenaciousOutboundBot/0.1", url)
+    except Exception as e:
+        log.warning("robots.txt check failed for %s: %s", robots_url, e)
+        return False
+
+
+def _selectors_for_url(url: str) -> list[str]:
+    host = urllib.parse.urlparse(url).netloc.lower()
+    if "linkedin.com" in host:
+        return ["a.job-card-container__link", "h3", "a", "li", "div"]
+    if "wellfound.com" in host:
+        return ["div[data-test='StartupJob'] a", "h3", "a", "li", "div"]
+    if "builtin" in host:
+        return ["a[data-id='job-card-title']", "h3", "a", "li", "div"]
+    return ["a", "h2", "h3", "li", "div"]
 
 
 def build_job_posts_signal_dict(sig: JobPostsSignal) -> dict:

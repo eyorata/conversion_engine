@@ -1,118 +1,164 @@
-# Conversion Engine — Tenacious Edition
+# Conversion Engine - Tenacious Edition
 
-Automated outbound lead-generation and conversion system for Tenacious
-Consulting and Outsourcing. Finds prospective clients in public data,
-qualifies them against a real intent signal, runs a nurture sequence, and
-books a discovery call with a Tenacious delivery lead.
+Automated outbound lead-generation and conversion system for Tenacious Consulting and Outsourcing. The system enriches a prospect from public signals, drafts a response through the LLM backbone, routes through channel-specific handlers, writes CRM activity, and books discovery calls through Cal.com.
 
-Email is the primary channel. SMS is secondary for warm-lead scheduling
-handoff only. Voice is reserved for the human-delivered discovery call.
-
-Benchmark: τ²-Bench retail. Enrichment: Crunchbase ODM + layoffs.fyi +
-public job-post velocity + leadership change + AI maturity 0–3 score +
-competitor gap brief.
+Email is the primary channel. SMS is secondary and is only allowed for warm-lead scheduling handoff after a prior email reply.
 
 ## Architecture
 
-```
- outbound seed --->  enrichment pipeline  ------> hiring_signal_brief.json
- (Crunchbase id)     ├── Crunchbase ODM (firmo)   competitor_gap_brief.json
-                     ├── layoffs.fyi (120d)              |
-                     ├── job posts (60d velocity)        v
-                     ├── leadership change (90d)   agent (LLM, dev/eval tiers)
-                     ├── AI maturity 0-3 score      ├── 4 ICP segments
-                     └── competitor gap brief       ├── per-segment language
-                                                     ├── hard policy guardrails
-                                                     │   (no unverified claims,
-                                                     │    no capacity promise,
-                                                     │    no pricing)
-                                                     ├── tool: Resend email
-                                                     ├── tool: AT SMS (warm only)
-                                                     ├── tool: Cal.com booking
-                                                     └── tool: HubSpot MCP
-                                                            |
-                                                            v
-                                                   Langfuse (traces + cost)
+```text
+outbound seed / inbound reply
+        |
+        v
+enrichment pipeline
+  |- Crunchbase ODM firmographics + funding
+  |- layoffs.fyi 120d signal
+  |- public job-post velocity (60d)
+  |- leadership change (90d)
+  |- AI maturity 0-3 scoring
+  `- competitor gap brief
+        |
+        v
+agent orchestrator
+  |- conversation state
+  |- prompt builder + LLM client
+  |- policy guardrails
+  |- dual-control booking gate
+  |- channel hierarchy (email first, SMS only for warm leads)
+  |- Resend send + reply webhook
+  |- Africa's Talking send + inbound webhook
+  |- Cal.com slot lookup + booking + booking webhook
+  `- HubSpot contact upsert + note logging
+        |
+        v
+Langfuse tracing / cost attribution
 ```
 
-Kill switch: all outbound routed to `STAFF_SINK_EMAIL` / `STAFF_SINK_NUMBER`
-unless `LIVE_OUTBOUND=1`. Default MUST be unset per the data-handling policy.
+Kill switch:
+all outbound routes to `STAFF_SINK_EMAIL` / `STAFF_SINK_NUMBER` unless `LIVE_OUTBOUND=1`.
 
-## Repository layout
+## Repository Layout
 
 | Path | Purpose |
 |------|---------|
-| `agent/` | email handler (primary), SMS gateway (secondary), orchestrator, prompts, policy, HubSpot + Cal.com + LLM + tracing clients, FastAPI app |
-| `enrichment/` | Crunchbase ODM loader, layoffs.fyi parser, job-post velocity, leadership detector, AI maturity scorer, ICP classifier, competitor gap brief, unified pipeline |
-| `eval/` | τ²-Bench harness wrapper, `score_log.json`, `trace_log.jsonl`, `baseline.md` |
-| `probes/` | Adversarial probe library (Act III) |
-| `data/` | Seed snapshots (job posts, leadership overrides, layoffs seed). Heavy downloads (Crunchbase CSV, live layoffs) gitignored |
-| `scripts/` | Day 0 smoke test, synthetic conversation runner |
-| `tests/` | Unit tests (28 passing) |
-| `docs/` | Data handling policy, Day 0 checklist |
-| `memo/` | Final 2-page decision memo and `evidence_graph.json` |
+| `agent/` | FastAPI app, orchestrator, email/SMS handlers, Cal.com client, HubSpot client, prompts, tracing, state, and Act IV dual-control mechanism. |
+| `enrichment/` | Public-signal collection and merging: Crunchbase, layoffs, jobs, leadership, AI maturity, ICP classification, and competitor-gap generation. |
+| `eval/` | Baseline artifacts, ablation outputs, and `method.md` for the mechanism writeup. |
+| `probes/` | Adversarial probe library, taxonomy, held-out set, and target failure documentation. |
+| `scripts/` | Smoke tests, HubSpot property provisioning, synthetic runs, probe runner, and ablation runner. |
+| `tests/` | Unit tests for policy, webhook handling, kill switches, SMS gate, and mechanism behavior. |
+| `docs/` | Human-facing setup and policy docs, including Day 0 checklist and data handling. |
+| `memo/` | Interim/final reporting artifacts and evidence-graph material. |
+| `data/` | Frozen public-data snapshots and seed files used by the enrichment pipeline. |
+| `cal.com/` | Local self-hosted Cal.com checkout used for Day 0 booking integration testing. |
+| `tau2-bench/` | External benchmark checkout used for the course baseline and held-out harness. |
+| `tenacious_sales_data/` | Seed materials, style guide, policy notes, and benchmark numbers used by prompts and evaluation. |
+| `.venv/` | Local virtual environment created during setup; user-local, not part of the application logic. |
+| `.pytest_cache/` | Test runner cache generated locally. |
+
+## Prerequisites
+
+- Python `3.11+`
+- Docker Desktop or equivalent Docker Engine
+- Git
+- PowerShell on Windows or any shell that can create and activate a venv
+- Chromium for Playwright live job-page checks: `playwright install chromium`
+
+All Python dependencies are pinned in [requirements.txt](C:/Users/user/Documents/tenx_academy/conversion_engine/requirements.txt).
 
 ## Setup
 
-Prerequisites: Python 3.11+, Docker (for Cal.com self-host), Git, free
-GitHub account for τ²-Bench clone.
+Recommended Windows PowerShell bootstrap:
 
-```bash
+```powershell
 python -m venv .venv
-source .venv/Scripts/activate     # git-bash on Windows
+.\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-
-cp .env.example .env
-# edit .env — see docs/day0_checklist.md
-
-playwright install chromium       # only needed for live job-post scraping
-
-# pull external benchmark (gitignored)
+copy .env.example .env
+playwright install chromium
 git clone https://github.com/sierra-research/tau2-bench.git
 pip install -e ./tau2-bench
 ```
 
-## Running
+If PowerShell blocks activation:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\.venv\Scripts\Activate.ps1
+```
+
+## Configuration Variables
+
+Use [.env.example](C:/Users/user/Documents/tenx_academy/conversion_engine/.env.example) as the source of truth. The most important groups are:
+
+| Variable | Meaning |
+|---|---|
+| `OPENROUTER_API_KEY` | Dev-tier LLM key for probes, synthetic runs, and most local development. |
+| `DEV_MODEL` | Dev-tier model id. |
+| `ANTHROPIC_API_KEY`, `EVAL_MODEL` | Eval-tier model settings for sealed held-out work only. |
+| `RESEND_API_KEY`, `RESEND_FROM_EMAIL` | Outbound email provider credentials and sender identity. |
+| `STAFF_SINK_EMAIL` | Safe sink inbox used when `LIVE_OUTBOUND` is off. |
+| `AT_USERNAME`, `AT_API_KEY`, `AT_SHORTCODE` | Africa's Talking SMS credentials. |
+| `AT_WEBHOOK_URL` | Public callback URL for Africa's Talking inbound SMS. |
+| `STAFF_SINK_NUMBER` | Safe SMS sink number used when `LIVE_OUTBOUND` is off. |
+| `HUBSPOT_MODE`, `HUBSPOT_ACCESS_TOKEN`, `HUBSPOT_PORTAL_ID` | HubSpot backend selection plus developer sandbox credentials. Default is REST; MCP mode requires a configured MCP server command. |
+| `HUBSPOT_MCP_COMMAND`, `HUBSPOT_MCP_ARGS`, `HUBSPOT_MCP_UPSERT_TOOL`, `HUBSPOT_MCP_NOTE_TOOL` | Optional HubSpot MCP server process and tool names when running in MCP mode. |
+| `CALCOM_BASE_URL`, `CALCOM_API_KEY`, `CALCOM_EVENT_TYPE_ID` | Cal.com API base URL and booking configuration. |
+| `CALCOM_WEBHOOK_SECRET` | Optional shared secret for the Cal.com booking webhook route. |
+| `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_HOST` | Observability/tracing configuration. |
+| `LIVE_OUTBOUND` | Safety switch; if not `1`, outbound email/SMS is rerouted to sink destinations. |
+| `ENV`, `LOG_LEVEL`, `PORT` | Runtime configuration for the FastAPI server. |
+
+## Local Run Order
+
+1. Create and activate the virtual environment.
+2. Install pinned dependencies with `pip install -r requirements.txt`.
+3. Copy `.env.example` to `.env` and fill the required provider keys.
+4. Provision HubSpot custom properties once on a fresh sandbox:
+   `python -m scripts.provision_hubspot_properties`
+5. Start the FastAPI app:
+   `uvicorn agent.app:app --host 0.0.0.0 --port 8080 --reload`
+6. If testing live callbacks locally, start a public tunnel:
+   `ngrok http 8080`
+7. Start Cal.com separately from `cal.com/` if you need real slot lookup / booking.
+8. Run smoke tests:
+   `python -m scripts.day0_smoke_test all`
+9. Run synthetic traffic:
+   `python -m scripts.synthetic_conversation --n 20 --out data/runs/synthetic.jsonl`
+
+## Useful Commands
 
 ```bash
 # unit tests
 python -m pytest tests/ -v
 
-# Day 0 smoke tests (prints pass/fail for each integration)
+# provider / stack smoke tests
 python -m scripts.day0_smoke_test all
 
-# τ²-Bench retail dev-slice baseline (Act I)
-python -m eval.tau2_runner --slice dev --trials 5 \
-    --out eval/score_log.json --traces eval/trace_log.jsonl
+# synthetic conversations
+python -m scripts.synthetic_conversation --n 20 --out data/runs/synthetic.jsonl
 
-# SMS + email webhook server (FastAPI)
-uvicorn agent.app:app --host 0.0.0.0 --port 8080 --reload
+# adversarial probes
+python -m scripts.run_probes
 
-# 20 synthetic interactions end-to-end for p50/p95
-python -m scripts.synthetic_conversation --n 20 \
-    --out data/runs/synthetic.jsonl
+# Act IV ablation
+python -m scripts.run_ablation
 ```
 
-## Data handling
+## Handoff Notes
 
-All prospects during the challenge week are synthetic, derived from public
-Crunchbase firmographics plus fictitious contact details. The program-operated
-SMS rig and email sink receive all outbound. See [docs/data_policy.md](docs/data_policy.md).
+Known limitations and next steps a successor will hit quickly:
 
-## Cost envelope
+1. HubSpot defaults to the official REST SDK. MCP mode is now wired as a backend option, but it still depends on an actual HubSpot MCP server being available in the runtime environment.
+2. Live job-page scraping now checks `robots.txt` and stays on a single public page, but broad source coverage still depends on the provided `careers_url` and frozen snapshots.
+3. AI maturity now exposes all six rubric categories in code, but some categories depend on optional public inputs that are sparse in the current Crunchbase sample.
+4. Competitor-gap evidence is stronger now, but peer quality is still limited by the committed sample dataset rather than a full market crawl.
+5. Cal.com webhook handling now exists for booking lifecycle events, but production hardening would still want signature verification against the exact hosted Cal.com scheme you deploy with.
 
-≤ $10 total per the 2026-04-23 program update. Dev-tier LLM (OpenRouter
-Qwen3 / DeepSeek) for Days 1–4. Eval-tier (Claude Sonnet 4.6) for the
-sealed held-out run only, trials=1. Per-trace cost attribution via Langfuse.
+## Data Handling
 
-## τ²-Bench baseline
-
-Per the 2026-04-23 program update, the baseline is provided by staff and
-lives in [eval/baseline.md](eval/baseline.md), [eval/score_log.json](eval/score_log.json),
-and [eval/trace_log.jsonl](eval/trace_log.jsonl). Trainees do not re-run it.
-Reference: pass@1 = 0.727, 95% CI [0.65, 0.79], 30 retail tasks × 5 trials,
-avg cost $0.02/run. Act IV held-out evaluation runs at **trials = 1**.
+All challenge-week prospects are synthetic, derived from public firmographics with fictitious contact details. Outbound remains sink-routed by default. See [data_policy.md](C:/Users/user/Documents/tenx_academy/conversion_engine/docs/data_policy.md) for the governing policy.
 
 ## Status
 
-See [STATUS.md](STATUS.md) for live progress.
+Live project status and rubric self-assessment live in [STATUS.md](C:/Users/user/Documents/tenx_academy/conversion_engine/STATUS.md).

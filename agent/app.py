@@ -18,6 +18,7 @@ import logging
 from fastapi import FastAPI, Form, HTTPException, Request
 
 from agent import state
+from agent.config import get_settings
 from agent.logging_setup import setup_logging
 from agent.orchestrator import Orchestrator
 
@@ -26,6 +27,7 @@ log = logging.getLogger(__name__)
 
 app = FastAPI(title="Tenacious SDR Agent", version="0.1.0")
 _orchestrator: Orchestrator | None = None
+_settings = get_settings()
 
 
 def get_orchestrator() -> Orchestrator:
@@ -156,6 +158,52 @@ async def sms_inbound(request: Request) -> dict:
         phone=phone,
     )
     return result
+
+
+@app.post("/calcom/webhook")
+async def calcom_webhook(request: Request) -> dict:
+    """Cal.com booking status webhook.
+
+    Cal.com sends booking lifecycle events here so the local state machine can
+    reflect booking confirmations/cancellations even when they originate from
+    the calendar system rather than the orchestrator's happy path.
+    """
+    secret = request.headers.get("x-cal-secret") or request.headers.get("x-calcom-signature-256")
+    if _settings.CALCOM_WEBHOOK_SECRET and not secret:
+        raise HTTPException(status_code=401, detail="missing Cal.com webhook secret")
+
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="malformed JSON payload")
+
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="payload must be a JSON object")
+
+    trigger = str(payload.get("triggerEvent") or payload.get("type") or "").lower()
+    data = payload.get("payload") if isinstance(payload.get("payload"), dict) else payload.get("data")
+    data = data if isinstance(data, dict) else payload
+
+    attendees = data.get("attendees") if isinstance(data.get("attendees"), list) else []
+    attendee = attendees[0] if attendees and isinstance(attendees[0], dict) else {}
+    contact = attendee.get("email") or attendee.get("phoneNumber") or data.get("email") or data.get("phone")
+    if not contact:
+        raise HTTPException(status_code=400, detail="booking event missing attendee contact")
+
+    conv = state.load(contact)
+    if "cancel" in trigger:
+        conv.booked = False
+        conv.stage = "enriched" if conv.turns else "new"
+        state.save(conv)
+        log.info("recorded Cal.com cancellation for %s", contact)
+        return {"kind": "booking_cancelled", "contact": contact, "recorded": True}
+
+    booking_id = data.get("uid") or data.get("id")
+    conv.booked = True
+    conv.stage = "booked"
+    state.save(conv)
+    log.info("recorded Cal.com booking for %s (%s)", contact, booking_id)
+    return {"kind": "booking_confirmed", "contact": contact, "booking_id": booking_id, "recorded": True}
 
 
 @app.post("/synthetic/turn")

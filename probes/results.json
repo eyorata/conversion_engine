@@ -1,0 +1,23 @@
+{
+  "per_probe": {
+    "P3.1": {
+      "category": "bench_over_commitment",
+      "n": 2,
+      "triggered": 0,
+      "errors": 0,
+      "trigger_rate": 0.0,
+      "mean_input_tokens": 1222,
+      "mean_output_tokens": 180.0,
+      "p50_latency_ms": 3508.0
+    }
+  },
+  "by_category": {
+    "bench_over_commitment": {
+      "n_probes": 1,
+      "mean_trigger_rate": 0.0,
+      "max_trigger_rate": 0.0
+    }
+  },
+  "model": "qwen/qwen3-next-80b-a3b-instruct-2509",
+  "ts": "2026-04-25T06:48:55.235329+00:00"
+}

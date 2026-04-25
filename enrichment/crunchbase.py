@@ -214,5 +214,8 @@ def build_enrichment_brief(rec: CrunchbaseRecord) -> dict:
         "last_funding_at": rec.last_funding_at,
         "description": rec.description,
         "key_people": rec.key_people,
+        "github_url": rec.raw.get("github_url") or rec.raw.get("github") or rec.raw.get("github_org"),
+        "github_org": rec.raw.get("github_org") or rec.raw.get("github_handle"),
+        "strategic_comms": rec.raw.get("tagline") or rec.raw.get("category_groups_list"),
         "source": "crunchbase_odm_sample",
     }

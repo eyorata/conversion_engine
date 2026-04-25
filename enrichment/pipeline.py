@@ -21,6 +21,12 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from enrichment.ai_maturity import ai_maturity_to_dict, score_ai_maturity
+from enrichment.ai_signal_collection import (
+    collect_exec_commentary_signal,
+    collect_github_activity_signal,
+    collect_modern_stack_signal,
+    collect_strategic_comms_signal,
+)
 from enrichment.competitor_gap import build_competitor_gap_brief, competitor_gap_brief_to_dict
 from enrichment.crunchbase import CrunchbaseIndex, build_enrichment_brief
 from enrichment.icp import classify, icp_assignments_to_list
@@ -86,11 +92,17 @@ def enrich(
     layoffs_idx = _layoffs()
     layoffs_signal = build_layoffs_signal(resolved_company, layoffs_idx) if layoffs_idx else {}
     leadership_signal = build_leadership_signal_dict(fetch_leadership_signal(resolved_company))
+    github_activity = collect_github_activity_signal(enrichment_brief)
+    exec_commentary_signal = collect_exec_commentary_signal(enrichment_brief)
+    modern_stack_signal = collect_modern_stack_signal(enrichment_brief)
+    strategic_comms_signal = collect_strategic_comms_signal(enrichment_brief)
 
     ai_maturity = ai_maturity_to_dict(
         score_ai_maturity(
             enrichment_brief=enrichment_brief,
             jobs_signal=jobs_signal,
+            github_activity=github_activity,
+            exec_commentary=exec_commentary_signal.get("evidence"),
         )
     )
 
@@ -107,10 +119,17 @@ def enrich(
             "last_funding_type": enrichment_brief.get("last_funding_type"),
             "last_funding_at": enrichment_brief.get("last_funding_at"),
             "total_funding_usd": enrichment_brief.get("total_funding_usd"),
+            "confidence": "high" if enrichment_brief.get("last_funding_type") else "none",
+            "retrieved_at": datetime.now(tz=timezone.utc).isoformat(),
+            "source": "crunchbase_odm_sample",
         },
         "layoffs_signal": layoffs_signal,
         "jobs_signal": jobs_signal,
         "leadership_signal": leadership_signal,
+        "github_activity_signal": github_activity,
+        "exec_commentary_signal": exec_commentary_signal,
+        "modern_stack_signal": modern_stack_signal,
+        "strategic_comms_signal": strategic_comms_signal,
         "ai_maturity": ai_maturity,
         "icp_assignments": icp,
         "retrieved_at": datetime.now(tz=timezone.utc).isoformat(),

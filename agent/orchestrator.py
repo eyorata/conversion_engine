@@ -27,6 +27,7 @@ from typing import Optional
 
 from agent import state
 from agent.calcom_client import Booking, CalcomClient
+from agent.dual_control import should_block_booking
 from agent.email_handler import EmailHandler, classify_email_reply
 from agent.hubspot_client import HubSpotClient
 from agent.llm import LLMClient
@@ -203,10 +204,31 @@ class Orchestrator:
                     log.error("policy still failing after regen; dropping outbound")
                     body = ""
 
+            # Dual-control commitment gate (DCCG). If the prospect's latest
+            # inbound contains a scheduling-deferral signal ("let me check my
+            # calendar," "thinking about it," etc.) AND no explicit slot
+            # acceptance, suppress the booking. See agent/dual_control.py and
+            # probes/target_failure_mode.md for the full design.
+            dccg_blocked, dccg_signal = should_block_booking(inbound_text or "")
+            dccg_fired = False
+            if dccg_blocked and parsed.get("intent") == "book":
+                log.info("DCCG fired: kind=%s; coercing intent=book -> reply", dccg_signal.kind)
+                parsed["intent"] = "reply"
+                parsed["book_slot"] = None
+                dccg_fired = True
+
             booking: Optional[Booking] = None
             if parsed.get("intent") == "book" and parsed.get("book_slot"):
+                # Coerce to an actually-offered slot. The LLM sometimes
+                # hallucinates or reformats times; Cal.com then rejects with
+                # "User either already has booking at this time or is not
+                # available" even when real availability exists.
+                chosen = parsed["book_slot"]
+                if slots and chosen not in slots:
+                    log.warning("LLM picked %r not in offered slots; falling back to %r", chosen, slots[0])
+                    chosen = slots[0]
                 booking = self.calcom.book(
-                    start_at=parsed["book_slot"],
+                    start_at=chosen,
                     name=conv.company or "Prospect",
                     email=email or f"{contact_key}@sink.test",
                     phone=phone or "",
@@ -214,6 +236,8 @@ class Orchestrator:
                 )
                 conv.booked = booking.booking_id is not None and booking.error in (None, "dry_run")
                 conv.stage = "booked"
+                if booking.booking_url:
+                    body = body.rstrip() + f"\n\nBooking link: {booking.booking_url}"
 
             contact = self.hubspot.upsert_contact(
                 phone=phone or None,
@@ -264,6 +288,10 @@ class Orchestrator:
                 "segment_used": parsed.get("segment_used"),
                 "booking": asdict(booking) if booking else None,
                 "policy": {"regen": regen_info} if regen_info else {"ok": True},
+                "dccg": {
+                    "fired": dccg_fired,
+                    "signal_kind": dccg_signal.kind if dccg_signal else None,
+                },
                 "hubspot_contact_id": contact.contact_id,
                 "latency_ms": latency_ms,
                 "send_result": asdict(send_result) if send_result else None,

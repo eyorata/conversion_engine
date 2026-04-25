@@ -1,3 +1,4 @@
+import sys
 from functools import lru_cache
 from typing import Optional
 
@@ -6,14 +7,18 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=None if "pytest" in sys.modules else ".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     ENV: str = "dev"
     LOG_LEVEL: str = "INFO"
     PORT: int = 8080
 
     OPENROUTER_API_KEY: Optional[str] = None
-    DEV_MODEL: str = "qwen/qwen3-next-80b-a3b"
+    DEV_MODEL: str = "qwen/qwen3-next-80b-a3b-instruct"
 
     ANTHROPIC_API_KEY: Optional[str] = None
     EVAL_MODEL: str = "claude-sonnet-4-6"
@@ -29,12 +34,18 @@ class Settings(BaseSettings):
     AT_SHORTCODE: Optional[str] = None
     AT_WEBHOOK_URL: Optional[str] = None
 
+    HUBSPOT_MODE: str = "rest"
     HUBSPOT_ACCESS_TOKEN: Optional[str] = None
     HUBSPOT_PORTAL_ID: Optional[str] = None
+    HUBSPOT_MCP_COMMAND: Optional[str] = None
+    HUBSPOT_MCP_ARGS: Optional[str] = None
+    HUBSPOT_MCP_UPSERT_TOOL: str = "hubspot_upsert_contact"
+    HUBSPOT_MCP_NOTE_TOOL: str = "hubspot_log_note"
 
     CALCOM_BASE_URL: str = "http://localhost:3000"
     CALCOM_API_KEY: Optional[str] = None
     CALCOM_EVENT_TYPE_ID: Optional[str] = None
+    CALCOM_WEBHOOK_SECRET: Optional[str] = None
 
     LANGFUSE_PUBLIC_KEY: Optional[str] = None
     LANGFUSE_SECRET_KEY: Optional[str] = None

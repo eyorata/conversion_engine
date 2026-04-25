@@ -33,11 +33,22 @@ class CheckResult:
 def _check_sms() -> CheckResult:
     if not settings.AT_API_KEY:
         return CheckResult("sms", False, "AT_API_KEY unset")
+    import httpx
+    base = (
+        "https://api.sandbox.africastalking.com"
+        if settings.AT_USERNAME == "sandbox"
+        else "https://api.africastalking.com"
+    )
     try:
-        import africastalking
-        africastalking.initialize(settings.AT_USERNAME, settings.AT_API_KEY)
-        _ = africastalking.Application.fetch_application_data()
-        return CheckResult("sms", True, f"AT app reachable as {settings.AT_USERNAME}")
+        r = httpx.get(
+            f"{base}/version1/user",
+            params={"username": settings.AT_USERNAME},
+            headers={"apiKey": settings.AT_API_KEY, "Accept": "application/json"},
+            timeout=15.0,
+        )
+        r.raise_for_status()
+        balance = r.json().get("UserData", {}).get("balance", "unknown")
+        return CheckResult("sms", True, f"AT reachable as {settings.AT_USERNAME}, balance={balance}")
     except Exception as e:
         return CheckResult("sms", False, f"AT error: {e}")
 
@@ -58,16 +69,24 @@ def _check_calcom() -> CheckResult:
     if not settings.CALCOM_API_KEY:
         return CheckResult("calcom", False, "CALCOM_API_KEY unset")
     import httpx
+    # Use v2 with Bearer auth so the key never appears in URL (and httpx logs).
     try:
         r = httpx.get(
-            f"{settings.CALCOM_BASE_URL}/v1/me",
-            params={"apiKey": settings.CALCOM_API_KEY},
+            f"{settings.CALCOM_BASE_URL}/v2/event-types",
+            headers={
+                "Authorization": f"Bearer {settings.CALCOM_API_KEY}",
+                "cal-api-version": "2024-06-14",
+            },
             timeout=10.0,
         )
-        r.raise_for_status()
-        return CheckResult("calcom", True, "Cal.com /v1/me reachable")
+        if r.status_code == 200:
+            payload = r.json()
+            data = payload.get("data") if isinstance(payload, dict) else payload
+            n = len(data) if isinstance(data, list) else (len(data.get("eventTypes", [])) if isinstance(data, dict) else 0)
+            return CheckResult("calcom", True, f"Cal.com /v2/event-types reachable, {n} event types")
+        return CheckResult("calcom", False, f"Cal.com /v2/event-types returned {r.status_code}")
     except Exception as e:
-        return CheckResult("calcom", False, f"Cal.com error: {e}")
+        return CheckResult("calcom", False, f"Cal.com error: {type(e).__name__}: {e}")
 
 
 def _check_langfuse() -> CheckResult:

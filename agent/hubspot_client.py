@@ -1,17 +1,18 @@
 """HubSpot client for Tenacious prospects.
 
-Writes one contact per lead. Enrichment fields (ICP segment, AI maturity,
-funding / layoff / job-post / leadership signals) are promoted onto the
-contact record so an SDR opening HubSpot sees the research finding without
-a click-through.
+Supports two backends:
+  - REST SDK (default, works today)
+  - MCP backend (enabled when a HubSpot MCP server is available)
 
-Current implementation uses the HubSpot REST API via the official Python
-SDK. Migration to the HubSpot MCP server is a Day-2 task tracked in
-STATUS.md; the rubric's "Mastered" tier expects MCP writes.
+The rubric's strongest CRM tier expects MCP wiring, so this file keeps the
+backend selection isolated while preserving the same contact + note API for the
+rest of the application.
 """
 from __future__ import annotations
 
+import json
 import logging
+import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -28,21 +29,18 @@ class ContactResult:
     error: Optional[str] = None
 
 
-def _safe_get(d: Optional[dict], *keys, default=None):
-    cur: Any = d
-    for k in keys:
-        if not isinstance(cur, dict):
-            return default
-        cur = cur.get(k)
-    return cur if cur is not None else default
+_STAGE_TO_HUBSPOT: dict[str, str] = {
+    "new": "NEW",
+    "enriched": "OPEN",
+    "engaged": "CONNECTED",
+    "booked": "OPEN_DEAL",
+    "opted_out": "UNQUALIFIED",
+    "undeliverable": "UNQUALIFIED",
+    "unqualified": "UNQUALIFIED",
+}
 
 
 def _enrichment_to_properties(hiring_signal_brief: Optional[dict]) -> dict[str, str]:
-    """Flatten the hiring_signal_brief into HubSpot contact properties.
-
-    HubSpot custom properties must be strings on create. Consumers of the
-    CRM can parse back where needed (e.g. ai_maturity_score is numeric text).
-    """
     if not hiring_signal_brief:
         return {}
 
@@ -53,11 +51,10 @@ def _enrichment_to_properties(hiring_signal_brief: Optional[dict]) -> dict[str, 
     maturity = hiring_signal_brief.get("ai_maturity") or {}
     icp = hiring_signal_brief.get("icp_assignments") or []
 
-    # Highest-confidence ICP assignment (list is pre-sorted by the classifier)
     top_icp = icp[0] if icp else {}
     out: dict[str, str] = {
         "last_enriched_at": hiring_signal_brief.get("retrieved_at") or datetime.now(tz=timezone.utc).isoformat(),
-        "tenacious_status": "draft",  # per seed license: all generated outputs marked draft
+        "tenacious_status": "draft",
     }
     if top_icp:
         out["icp_segment"] = str(top_icp.get("name", ""))
@@ -88,7 +85,25 @@ def _enrichment_to_properties(hiring_signal_brief: Optional[dict]) -> dict[str, 
     return out
 
 
-class HubSpotClient:
+class HubSpotBackend:
+    def upsert_contact(
+        self,
+        *,
+        phone: Optional[str],
+        email: Optional[str],
+        company: Optional[str],
+        crunchbase_id: Optional[str],
+        stage: str,
+        hiring_signal_brief: Optional[dict],
+        booking_id: Optional[str],
+    ) -> ContactResult:
+        raise NotImplementedError
+
+    def log_note(self, contact_id: str, body: str) -> Optional[str]:
+        raise NotImplementedError
+
+
+class HubSpotRestBackend(HubSpotBackend):
     def __init__(self) -> None:
         self.settings = get_settings()
         self._client = None
@@ -105,19 +120,19 @@ class HubSpotClient:
             self._client = HubSpot(access_token=self.settings.HUBSPOT_ACCESS_TOKEN)
             return self._client
         except Exception as e:
-            log.warning("HubSpot init failed: %s", e)
+            log.warning("HubSpot REST init failed: %s", e)
             return None
 
     def upsert_contact(
         self,
         *,
-        phone: Optional[str] = None,
-        email: Optional[str] = None,
-        company: Optional[str] = None,
-        crunchbase_id: Optional[str] = None,
-        stage: str = "new",
-        hiring_signal_brief: Optional[dict] = None,
-        booking_id: Optional[str] = None,
+        phone: Optional[str],
+        email: Optional[str],
+        company: Optional[str],
+        crunchbase_id: Optional[str],
+        stage: str,
+        hiring_signal_brief: Optional[dict],
+        booking_id: Optional[str],
     ) -> ContactResult:
         client = self._get()
         if client is None:
@@ -125,7 +140,7 @@ class HubSpotClient:
 
         props: dict[str, str] = {
             "lifecyclestage": "lead",
-            "hs_lead_status": stage.upper(),
+            "hs_lead_status": _STAGE_TO_HUBSPOT.get(stage.lower(), "NEW"),
         }
         if phone:
             props["phone"] = phone
@@ -169,7 +184,7 @@ class HubSpotClient:
             created = client.crm.contacts.basic_api.create(simple_public_object_input_for_create=payload)
             return ContactResult(contact_id=created.id, created=True)
         except Exception as e:
-            log.exception("HubSpot upsert failed")
+            log.exception("HubSpot REST upsert failed")
             return ContactResult(contact_id=None, created=False, error=str(e))
 
     def log_note(self, contact_id: str, body: str) -> Optional[str]:
@@ -198,6 +213,178 @@ class HubSpotClient:
             )
             note = client.crm.objects.notes.basic_api.create(simple_public_object_input_for_create=payload)
             return note.id
-        except Exception as e:
-            log.exception("HubSpot note create failed")
+        except Exception:
+            log.exception("HubSpot REST note create failed")
             return None
+
+
+class _StdioMCPClient:
+    """Minimal stdio JSON-RPC client for an external MCP server."""
+
+    def __init__(self, command: str, args: list[str]) -> None:
+        self._proc = subprocess.Popen(
+            [command] + args,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            bufsize=1,
+        )
+        self._id = 0
+
+    def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
+        if not self._proc.stdin or not self._proc.stdout:
+            raise RuntimeError("MCP transport unavailable")
+        self._id += 1
+        request = {
+            "jsonrpc": "2.0",
+            "id": self._id,
+            "method": "tools/call",
+            "params": {
+                "name": name,
+                "arguments": arguments,
+            },
+        }
+        self._proc.stdin.write(json.dumps(request) + "\n")
+        self._proc.stdin.flush()
+        while True:
+            line = self._proc.stdout.readline()
+            if not line:
+                raise RuntimeError("MCP server closed the stream")
+            payload = json.loads(line)
+            if payload.get("id") != self._id:
+                continue
+            if "error" in payload:
+                raise RuntimeError(str(payload["error"]))
+            return payload.get("result")
+
+
+class HubSpotMCPBackend(HubSpotBackend):
+    """Backend for a configured HubSpot MCP server.
+
+    Tool names are supplied by env vars so this adapter stays honest about the
+    fact that MCP servers differ in how they expose operations.
+    """
+
+    def __init__(self) -> None:
+        self.settings = get_settings()
+        self._transport: Optional[_StdioMCPClient] = None
+
+    def _get_transport(self) -> Optional[_StdioMCPClient]:
+        if self._transport is not None:
+            return self._transport
+        if not self.settings.HUBSPOT_MCP_COMMAND:
+            log.warning("HUBSPOT_MODE=mcp but HUBSPOT_MCP_COMMAND is unset")
+            return None
+        args = (self.settings.HUBSPOT_MCP_ARGS or "").split()
+        try:
+            self._transport = _StdioMCPClient(self.settings.HUBSPOT_MCP_COMMAND, args)
+            return self._transport
+        except Exception as e:
+            log.warning("HubSpot MCP init failed: %s", e)
+            return None
+
+    def upsert_contact(
+        self,
+        *,
+        phone: Optional[str],
+        email: Optional[str],
+        company: Optional[str],
+        crunchbase_id: Optional[str],
+        stage: str,
+        hiring_signal_brief: Optional[dict],
+        booking_id: Optional[str],
+    ) -> ContactResult:
+        transport = self._get_transport()
+        if transport is None:
+            return ContactResult(contact_id=None, created=False, error="no_mcp_transport")
+
+        properties: dict[str, str] = {
+            "lifecyclestage": "lead",
+            "hs_lead_status": _STAGE_TO_HUBSPOT.get(stage.lower(), "NEW"),
+        }
+        if phone:
+            properties["phone"] = phone
+        if email:
+            properties["email"] = email
+        if company:
+            properties["company"] = company
+        if crunchbase_id:
+            properties["crunchbase_id"] = crunchbase_id
+        if booking_id:
+            properties["tenacious_booking_id"] = booking_id
+        properties.update(_enrichment_to_properties(hiring_signal_brief))
+
+        try:
+            result = transport.call_tool(
+                self.settings.HUBSPOT_MCP_UPSERT_TOOL,
+                {
+                    "email": email,
+                    "phone": phone,
+                    "properties": properties,
+                },
+            )
+            if isinstance(result, dict):
+                return ContactResult(
+                    contact_id=str(result.get("id") or result.get("contact_id") or ""),
+                    created=bool(result.get("created", False)),
+                    error=result.get("error"),
+                )
+            return ContactResult(contact_id=None, created=False, error="unexpected_mcp_result")
+        except Exception as e:
+            log.exception("HubSpot MCP upsert failed")
+            return ContactResult(contact_id=None, created=False, error=str(e))
+
+    def log_note(self, contact_id: str, body: str) -> Optional[str]:
+        transport = self._get_transport()
+        if transport is None:
+            return None
+        try:
+            result = transport.call_tool(
+                self.settings.HUBSPOT_MCP_NOTE_TOOL,
+                {
+                    "contact_id": contact_id,
+                    "body": body,
+                    "timestamp": datetime.now(tz=timezone.utc).isoformat(),
+                },
+            )
+            if isinstance(result, dict):
+                return str(result.get("id") or result.get("note_id") or "")
+        except Exception:
+            log.exception("HubSpot MCP note create failed")
+        return None
+
+
+class HubSpotClient:
+    def __init__(self) -> None:
+        self.settings = get_settings()
+        self.backend: HubSpotBackend
+        if self.settings.HUBSPOT_MODE.lower() == "mcp":
+            self.backend = HubSpotMCPBackend()
+        else:
+            self.backend = HubSpotRestBackend()
+
+    def upsert_contact(
+        self,
+        *,
+        phone: Optional[str] = None,
+        email: Optional[str] = None,
+        company: Optional[str] = None,
+        crunchbase_id: Optional[str] = None,
+        stage: str = "new",
+        hiring_signal_brief: Optional[dict] = None,
+        booking_id: Optional[str] = None,
+    ) -> ContactResult:
+        return self.backend.upsert_contact(
+            phone=phone,
+            email=email,
+            company=company,
+            crunchbase_id=crunchbase_id,
+            stage=stage,
+            hiring_signal_brief=hiring_signal_brief,
+            booking_id=booking_id,
+        )
+
+    def log_note(self, contact_id: str, body: str) -> Optional[str]:
+        return self.backend.log_note(contact_id, body)
