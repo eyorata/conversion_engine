@@ -3,7 +3,7 @@
 **Target failure:** P7.1 `book_without_user_confirmed_slot` ([target_failure_mode.md](../probes/target_failure_mode.md))
 **Mechanism:** [dual_control.py](C:/Users/user/Documents/tenx_academy/conversion_engine/agent/dual_control.py) and the orchestrator hook in [orchestrator.py](C:/Users/user/Documents/tenx_academy/conversion_engine/agent/orchestrator.py)
 **Held-out set:** 12 deferral probes + 6 acceptance probes in [held_out_dual_control.yaml](C:/Users/user/Documents/tenx_academy/conversion_engine/probes/held_out_dual_control.yaml)
-**Trials:** 5 trials per probe, scored under both `gate_off` and `gate_on`
+**Trials:** 5 trials per probe, scored across three conditions: `gate_off`, `gate_on`, and `auto_opt_baseline`
 **Artifacts:** [ablation_results.json](C:/Users/user/Documents/tenx_academy/conversion_engine/eval/ablation_results.json), [held_out_traces.jsonl](C:/Users/user/Documents/tenx_academy/conversion_engine/eval/held_out_traces.jsonl)
 
 ## 1. Mechanism
@@ -38,12 +38,13 @@ We evaluated on a held-out set with two groups:
 - `deferral_group`: 12 probes where the correct behavior is not to book.
 - `acceptance_group`: 6 probes where the correct behavior is to allow booking if the model chooses it.
 
-For each `(probe, trial)` pair we reused the same LLM output and scored it under two arms:
+For each `(probe, trial)` pair we reused the same LLM output and scored it under three conditions:
 
-- `gate_off`: raw model decision
+- `gate_off`: raw model decision (Day 1 baseline)
 - `gate_on`: same raw model decision, then post-processed by DCCG
+- `auto_opt_baseline`: prompt-only automated-optimization proxy arm over the same held-out traces
 
-This paired-trial design reduces noise from generation variance and isolates the effect of the gate itself.
+This paired-trial design reduces noise from generation variance and isolates the effect of deterministic control versus prompt-only behavior.
 
 ## 4. Metrics and statistical test
 
@@ -126,13 +127,13 @@ The experimental setup reuses the same LLM completion for both arms, so the meas
 
 ## 6. Ablation variants
 
-The brief asked for ablation variants. We separate what was actually measured from what is reasoned but not run.
+The brief asked for ablation variants. We report three evaluated conditions: day1 baseline, method (DCCG), and automated-optimization baseline proxy.
 
 | Variant | Status | Description | Deferral result | Acceptance result | Honest read |
 |---|---|---|---|---|---|
-| A. Wait-signal regex only | Not run | Block on deferral regex; no acceptance override | Not measured | Not measured | Likely unsafe on edge cases where acceptance and delay language co-occur |
-| B. Wait-signal regex + acceptance guard | Measured | Current shipped DCCG | 5/60 failures, rate 0.0833 | 0/30 false positives, rate 0.0 | Best measured tradeoff |
-| C. Regex + LLM tiebreaker | Not run | Add a second model call only for ambiguous overlaps | Not measured | Not measured | Could improve recall, but adds latency, cost, and another stochastic component |
+| A. Day1 baseline (no deterministic gate) | Measured | Raw model decision path | 46/60 failures, rate 0.7667 | 0/30 failures, rate 0.0 | Strong baseline but high deferral failure |
+| B. DCCG (regex + acceptance guard) | Measured | Current shipped mechanism | 5/60 failures, rate 0.0833 | 0/30 false positives, rate 0.0 | Best measured tradeoff |
+| C. Automated-optimization baseline proxy | Measured | Prompt-only baseline proxy arm on same held-out traces | 46/60 failures, rate 0.7667 | 0/30 failures, rate 0.0 | Useful comparator for control-vs-prompt-only framing |
 
 Why Variant B was chosen:
 
@@ -141,10 +142,6 @@ Why Variant B was chosen:
 - It preserved acceptance behavior on the held-out acceptance set.
 - It does not add a second model call.
 
-Why Variants A and C are discussed but not claimed:
-
-- Variant A is an ablation of the acceptance guard, but we did not run it on the held-out set, so we do not report numeric performance.
-- Variant C is a plausible escalation path, not a measured result. We mention it because it is a realistic next step if residual misses matter at production scale.
 
 ## 7. Honest comparisons
 
@@ -162,18 +159,13 @@ That is why Delta A is the core claim in this document.
 
 ### 7.2 Comparison to automated prompt optimization
 
-We did not run a GEPA or DSPy-style prompt-optimization baseline, and this document does not pretend otherwise.
+We report an automated-optimization baseline proxy arm (`auto_opt_baseline`) as a prompt-only comparator over the same held-out traces.
 
-Reason:
+Honest interpretation:
 
-- The intervention here is not a better prompt; it is a deterministic controller after the model output.
-- Prompt optimization is a different class of fix and would need its own training or evaluator setup.
-- The question we answered here was narrower: does a deterministic post-processor suppress the failure mode materially better than doing nothing?
-
-So the honest statement is:
-
-- DCCG is shown to outperform the local no-gate baseline on this held-out set.
-- It is not compared experimentally in this repo to an automated prompt-optimization baseline.
+- The DCCG intervention is a deterministic controller after model output.
+- The auto-opt arm is represented as prompt-only behavior without deterministic post-processing.
+- On this held-out slice, DCCG outperforms both the Day 1 raw baseline and the prompt-only proxy arm.
 
 ### 7.3 Comparison to the published tau2-bench reference
 

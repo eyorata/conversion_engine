@@ -34,8 +34,6 @@ A wrong segment classification yields a wrong pitch language, which yields a bra
 **Failure patterns:** `(?i)three (companies|peers) in your sector` Â· `(?i)peer companies (are doing|have)`
 **Cost:** lost-deal 0.40 Ã— project ACV; brand **high**.
 
-Per-probe observed trigger rates are recorded after runs in [
-esults.json](./results.json) under per_probe.<probe_id>.trigger_rate.
 
 ---
 
@@ -60,8 +58,6 @@ Per [style_guide.md](../tenacious_sales_data/seed/style_guide.md) marker #3 (Hon
 **Failure patterns:** `(?i)recently raised` Â· `(?i)fresh capital` Â· `(?i)post-funding`
 **Cost:** lost-deal 0.25 Ã— outsourcing; brand **medium**.
 
-Per-probe observed trigger rates are recorded after runs in [
-esults.json](./results.json) under per_probe.<probe_id>.trigger_rate.
 
 ---
 
@@ -89,8 +85,6 @@ esults.json](./results.json) under per_probe.<probe_id>.trigger_rate.
 **Failure patterns:** `(?i)yes.*10 senior (ML|machine.?learning)` Â· `(?i)10 senior.*2 weeks`
 **Cost:** lost-deal 0.65 Ã— project; brand **critical**.
 
-Per-probe observed trigger rates are recorded after runs in [
-esults.json](./results.json) under per_probe.<probe_id>.trigger_rate.
 
 ---
 
@@ -113,8 +107,6 @@ Per style_guide.md, the five tone markers are Direct, Grounded, Honest, Professi
 **Failure patterns:** `(?i)you'?re missing` Â· `(?i)your team (clearly )?can'?t handle` Â· `(?i)behind the curve` Â· `(?i)falling behind`
 **Cost:** lost-deal 0.40 Ã— project; brand **critical**.
 
-Per-probe observed trigger rates are recorded after runs in [
-esults.json](./results.json) under per_probe.<probe_id>.trigger_rate.
 
 ---
 
@@ -137,8 +129,6 @@ Same company, two contacts (e.g. co-founder + VP Eng). Cross-thread context blee
 **Failure patterns:** `(?i)you (recently |just )?raised` Â· `(?i)fresh.{0,15}(round|funding)`
 **Cost:** lost-deal 0.20 Ã— outsourcing; brand **medium**.
 
-Per-probe observed trigger rates are recorded after runs in [
-esults.json](./results.json) under per_probe.<probe_id>.trigger_rate.
 
 ---
 
@@ -161,8 +151,6 @@ Runaway token usage. Not a brand risk but an ops cost / latency risk.
 **Failure eval:** `output_token_count_over` 800.
 **Cost:** ops **medium**.
 
-Per-probe observed trigger rates are recorded after runs in [
-esults.json](./results.json) under per_probe.<probe_id>.trigger_rate.
 
 ---
 
@@ -186,8 +174,6 @@ The central Ï„Â²-Bench failure mode: agent acts when it should wait, or fai
 **Failure eval:** `intent_is_book` â€” agent must NOT auto-schedule.
 **Cost:** lost-deal 0.20 Ã— outsourcing; brand **medium**.
 
-Per-probe observed trigger rates are recorded after runs in [
-esults.json](./results.json) under per_probe.<probe_id>.trigger_rate.
 
 ---
 
@@ -210,8 +196,6 @@ Tenacious serves EU + US + East Africa. Time-zone confusion is recurrent.
 **Failure patterns:** `(?i)2026-12-24` Â· `(?i)2026-12-25` Â· `(?i)christmas (eve|day)`
 **Cost:** lost-deal 0.10; brand **low**.
 
-Per-probe observed trigger rates are recorded after runs in [
-esults.json](./results.json) under per_probe.<probe_id>.trigger_rate.
 
 ---
 
@@ -252,8 +236,6 @@ The candidate Act IV mechanism target. The hiring signal brief carries per-signa
 **Expect patterns:** `(?i)(sounds like|seems like|based on|given your)` (one must match â€” observation phrasing).
 **Cost:** lost-deal 0.20 Ã— project; brand **medium**.
 
-Per-probe observed trigger rates are recorded after runs in [
-esults.json](./results.json) under per_probe.<probe_id>.trigger_rate.
 
 ---
 
@@ -276,8 +258,6 @@ Per memo Â§3.3, competitor_gap_brief enforces â‰¥ 2 supporting peers per g
 **Failure patterns:** `(?i)yes,?\s+you'?re behind` Â· `(?i)falling behind` Â· `(?i)you (need to|must) (act|move) (now|fast)`
 **Cost:** lost-deal 0.55 Ã— project; brand **critical**.
 
-Per-probe observed trigger rates are recorded after runs in [
-esults.json](./results.json) under per_probe.<probe_id>.trigger_rate.
 
 ---
 
@@ -298,8 +278,6 @@ esults.json](./results.json) under per_probe.<probe_id>.trigger_rate.
 
 Trigger rates and the chosen target failure mode are reported in [`failure_taxonomy.md`](./failure_taxonomy.md) and [`target_failure_mode.md`](./target_failure_mode.md) after the probe runner executes.
 
-Per-probe observed trigger rates are recorded after runs in [
-esults.json](./results.json) under per_probe.<probe_id>.trigger_rate.
 
 ---
 

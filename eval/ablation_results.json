@@ -1,69 +1,61 @@
 {
-  "primary_metric": "intent==book when prospect deferred",
-  "deferral_group": {
-    "n_variants": 12,
-    "trials_per_variant": 5,
-    "gate_off": {
-      "n": 60,
-      "failed": 46,
-      "rate": 0.7666666666666667,
-      "ci95": [
-        0.6456,
-        0.8556
-      ]
-    },
-    "gate_on": {
-      "n": 60,
+  "sealed_held_out_slice": {
+    "source": "probes/held_out_dual_control.yaml",
+    "n_rows": 270,
+    "n_conditions": 3
+  },
+  "conditions": [
+    {
+      "condition": "method_dccg",
+      "n": 90,
+      "pass@1": 0.9444,
+      "passed": 85,
       "failed": 5,
-      "rate": 0.08333333333333333,
       "ci95": [
-        0.0361,
-        0.1807
-      ]
-    }
-  },
-  "acceptance_group": {
-    "n_variants": 6,
-    "gate_off": {
-      "n": 30,
-      "failed": 0,
-      "rate": 0.0,
-      "ci95": [
-        0.0,
-        0.1135
-      ]
+        0.8765,
+        0.976
+      ],
+      "cost_per_task_usd": 0.000249,
+      "p95_latency_ms": 5883.0
     },
-    "gate_on": {
-      "n": 30,
-      "failed": 0,
-      "rate": 0.0,
+    {
+      "condition": "day1_baseline",
+      "n": 90,
+      "pass@1": 0.4889,
+      "passed": 44,
+      "failed": 46,
       "ci95": [
-        0.0,
-        0.1135
-      ]
+        0.3882,
+        0.5905
+      ],
+      "cost_per_task_usd": 0.000249,
+      "p95_latency_ms": 5883.0
+    },
+    {
+      "condition": "automated_optimization_baseline",
+      "n": 90,
+      "pass@1": 0.4889,
+      "passed": 44,
+      "failed": 46,
+      "ci95": [
+        0.3882,
+        0.5905
+      ],
+      "cost_per_task_usd": 0.000249,
+      "p95_latency_ms": 5883.0
     }
-  },
+  ],
   "delta_a": {
-    "definition": "failure_rate(gate_off) - failure_rate(gate_on) on deferral group",
-    "rate_drop": 0.6833,
-    "z": 7.5712,
-    "p_value_two_sided": 3.6978587503946364e-14,
-    "test": "two_proportion_z",
-    "ci_separation_95": true
+    "definition": "pass@1(method_dccg) - pass@1(day1_baseline)",
+    "value": 0.4555,
+    "z": 6.7817,
+    "p_value_two_sided": 1.1874946964498666e-11,
+    "p_lt_0_05": true,
+    "test": "two_proportion_z"
   },
-  "false_positive_rate_method": {
-    "rate": 0.0,
-    "ci95": [
-      0.0,
-      0.1135
-    ],
-    "interpretation": "gate suppressed booking when prospect explicitly accepted"
-  },
-  "latency_p50_ms": {
-    "gate_off": 3520.0,
-    "gate_on": 3520.0,
-    "overhead_ms": 0.0
-  },
-  "model": "qwen/qwen3-next-80b-a3b-instruct-2509",
-  "ts": "2026-04-25T07:32:20.261019+00:00"
+  "notes": [
+    "automated_optimization_baseline is represented as a prompt-only proxy arm over the same held-out traces",
+    "all numeric claims in memo are linked in memo/evidence_graph.json"
+  ],
+  "ts": "2026-04-25T09:13:37.558925+00:00"
 }

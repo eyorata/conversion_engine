@@ -1,0 +1,27 @@
+{
+  "period": "challenge_week",
+  "line_items": [
+    {
+      "id": "tau2_llm_spend",
+      "source": "eval/trace_log.jsonl",
+      "amount_usd": 2.9858,
+      "trace_count": 150
+    },
+    {
+      "id": "rig_usage",
+      "source": "eval/trace_log.jsonl.duration",
+      "hours": 6.511,
+      "rate_usd_per_hour": 0.0,
+      "amount_usd": 0.0
+    }
+  ],
+  "totals": {
+    "llm_spend_usd": 2.9858,
+    "rig_cost_usd": 0.0,
+    "total_usd": 2.9858,
+    "trace_count": 150,
+    "qualified_leads": 16,
+    "cost_per_qualified_lead_usd": 0.1866
+  },
+  "ts": "2026-04-25T09:13:37.559948+00:00"
+}
