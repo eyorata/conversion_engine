@@ -75,6 +75,9 @@ def _enrichment_to_properties(hiring_signal_brief: Optional[dict]) -> dict[str, 
         out["layoffs_confidence"] = str(layoffs.get("confidence", "none"))
     if jobs:
         out["job_roles_current"] = str(jobs.get("total_roles_current", 0))
+        vel_delta = jobs.get("velocity_delta_60d")
+        if vel_delta is not None:
+            out["job_velocity_delta_60d"] = str(vel_delta)
         vel = jobs.get("velocity_ratio")
         if vel is not None:
             out["job_velocity_ratio"] = str(vel)

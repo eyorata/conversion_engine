@@ -19,6 +19,7 @@ from fastapi import FastAPI, Form, HTTPException, Request
 
 from agent import state
 from agent.config import get_settings
+from agent.hubspot_client import HubSpotClient
 from agent.logging_setup import setup_logging
 from agent.orchestrator import Orchestrator
 
@@ -27,6 +28,7 @@ log = logging.getLogger(__name__)
 
 app = FastAPI(title="Tenacious SDR Agent", version="0.1.0")
 _orchestrator: Orchestrator | None = None
+_hubspot: HubSpotClient | None = None
 _settings = get_settings()
 
 
@@ -35,6 +37,13 @@ def get_orchestrator() -> Orchestrator:
     if _orchestrator is None:
         _orchestrator = Orchestrator()
     return _orchestrator
+
+
+def get_hubspot() -> HubSpotClient:
+    global _hubspot
+    if _hubspot is None:
+        _hubspot = HubSpotClient()
+    return _hubspot
 
 
 @app.get("/health")
@@ -92,6 +101,12 @@ async def email_inbound(request: Request) -> dict:
         conv.undeliverable = True
         conv.stage = "undeliverable"
         state.save(conv)
+        hs = get_hubspot().upsert_contact(email=contact, stage="undeliverable")
+        if hs.contact_id:
+            get_hubspot().log_note(
+                hs.contact_id,
+                f"Email bounce webhook recorded: event_type={event_type}",
+            )
         log.info("recorded bounce for %s", contact)
         return {"kind": "bounce", "contact": contact, "recorded": True}
 
@@ -104,6 +119,12 @@ async def email_inbound(request: Request) -> dict:
         conv.opted_out = True
         conv.stage = "opted_out"
         state.save(conv)
+        hs = get_hubspot().upsert_contact(email=contact, stage="opted_out")
+        if hs.contact_id:
+            get_hubspot().log_note(
+                hs.contact_id,
+                f"Email complaint/spam webhook recorded: event_type={event_type}",
+            )
         log.info("recorded complaint/spam for %s", contact)
         return {"kind": "complaint", "contact": contact, "recorded": True}
 
@@ -189,12 +210,26 @@ async def calcom_webhook(request: Request) -> dict:
     contact = attendee.get("email") or attendee.get("phoneNumber") or data.get("email") or data.get("phone")
     if not contact:
         raise HTTPException(status_code=400, detail="booking event missing attendee contact")
+    attendee_email = attendee.get("email") or data.get("email")
+    attendee_phone = attendee.get("phoneNumber") or data.get("phone")
+    attendee_name = attendee.get("name") or data.get("name")
 
     conv = state.load(contact)
     if "cancel" in trigger:
         conv.booked = False
         conv.stage = "enriched" if conv.turns else "new"
         state.save(conv)
+        hs = get_hubspot().upsert_contact(
+            email=attendee_email if attendee_email else (contact if "@" in str(contact) else None),
+            phone=attendee_phone if attendee_phone else (contact if "@" not in str(contact) else None),
+            company=conv.company or attendee_name,
+            stage=conv.stage,
+        )
+        if hs.contact_id:
+            get_hubspot().log_note(
+                hs.contact_id,
+                f"Cal.com cancellation webhook recorded: trigger={trigger}",
+            )
         log.info("recorded Cal.com cancellation for %s", contact)
         return {"kind": "booking_cancelled", "contact": contact, "recorded": True}
 
@@ -202,6 +237,18 @@ async def calcom_webhook(request: Request) -> dict:
     conv.booked = True
     conv.stage = "booked"
     state.save(conv)
+    hs = get_hubspot().upsert_contact(
+        email=attendee_email if attendee_email else (contact if "@" in str(contact) else None),
+        phone=attendee_phone if attendee_phone else (contact if "@" not in str(contact) else None),
+        company=conv.company or attendee_name,
+        stage=conv.stage,
+        booking_id=str(booking_id) if booking_id is not None else None,
+    )
+    if hs.contact_id:
+        get_hubspot().log_note(
+            hs.contact_id,
+            f"Cal.com booking webhook recorded: trigger={trigger}, booking_id={booking_id}",
+        )
     log.info("recorded Cal.com booking for %s (%s)", contact, booking_id)
     return {"kind": "booking_confirmed", "contact": contact, "booking_id": booking_id, "recorded": True}
 

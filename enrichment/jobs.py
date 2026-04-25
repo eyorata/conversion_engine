@@ -45,6 +45,7 @@ class JobPostsSignal:
     company: str
     total_roles_current: int
     total_roles_60d_ago: Optional[int]
+    velocity_delta_60d: Optional[int]  # current - 60d_ago
     velocity_ratio: Optional[float]  # current / 60d_ago
     ai_roles_current: int
     ai_role_share: float
@@ -87,12 +88,14 @@ def fetch_job_posts_signal(
         titles = current.get("titles", [])
         total, _eng, ai_count, examples = _score_titles(titles)
         past_total = past.get("total") if past else None
+        velocity_delta = (total - past_total) if past_total is not None else None
         velocity = (total / past_total) if past_total else None
         ai_share = (ai_count / total) if total else 0.0
         return JobPostsSignal(
             company=company,
             total_roles_current=total,
             total_roles_60d_ago=past_total,
+            velocity_delta_60d=velocity_delta,
             velocity_ratio=round(velocity, 2) if velocity else None,
             ai_roles_current=ai_count,
             ai_role_share=round(ai_share, 3),
@@ -110,6 +113,7 @@ def fetch_job_posts_signal(
                 company=company,
                 total_roles_current=total,
                 total_roles_60d_ago=None,
+                velocity_delta_60d=None,
                 velocity_ratio=None,
                 ai_roles_current=ai_count,
                 ai_role_share=round((ai_count / total) if total else 0.0, 3),
@@ -125,6 +129,7 @@ def fetch_job_posts_signal(
         company=company,
         total_roles_current=0,
         total_roles_60d_ago=None,
+        velocity_delta_60d=None,
         velocity_ratio=None,
         ai_roles_current=0,
         ai_role_share=0.0,
@@ -213,6 +218,7 @@ def build_job_posts_signal_dict(sig: JobPostsSignal) -> dict:
         "company": sig.company,
         "total_roles_current": sig.total_roles_current,
         "total_roles_60d_ago": sig.total_roles_60d_ago,
+        "velocity_delta_60d": sig.velocity_delta_60d,
         "velocity_ratio": sig.velocity_ratio,
         "ai_roles_current": sig.ai_roles_current,
         "ai_role_share": sig.ai_role_share,

@@ -42,7 +42,7 @@ all outbound routes to `STAFF_SINK_EMAIL` / `STAFF_SINK_NUMBER` unless `LIVE_OUT
 | Path | Purpose |
 |------|---------|
 | `agent/` | FastAPI app, orchestrator, email/SMS handlers, Cal.com client, HubSpot client, prompts, tracing, state, and Act IV dual-control mechanism. |
-| `enrichment/` | Public-signal collection and merging: Crunchbase, layoffs, jobs, leadership, AI maturity, ICP classification, and competitor-gap generation. |
+| `enrichment/` | Public-signal collection and merging: Crunchbase, layoffs, jobs, leadership, AI maturity, ICP classification, competitor-gap generation, and `competitor_gap_brief` schema artifacts. |
 | `eval/` | Baseline artifacts, ablation outputs, and `method.md` for the mechanism writeup. |
 | `probes/` | Adversarial probe library, taxonomy, held-out set, and target failure documentation. |
 | `scripts/` | Smoke tests, HubSpot property provisioning, synthetic runs, probe runner, and ablation runner. |

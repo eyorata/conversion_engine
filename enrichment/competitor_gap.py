@@ -46,9 +46,11 @@ class CompetitorGapBrief:
     distribution_position: Optional[dict]
     sector: Optional[str]
     peer_count: int
+    selected_competitor_count: int
     sparse_sector: bool
     selection_criteria: list[str]
     peers: list[PeerProfile]
+    selected_competitors: list[PeerProfile]
     top_quartile_ai_maturity_min: Optional[int]
     gap_practices: list[dict]
     retrieved_at: str
@@ -108,6 +110,44 @@ def _gap_practices(prospect: PeerProfile, top_peers: list[PeerProfile]) -> list[
     return gaps[:3]
 
 
+def _select_5_to_10_competitors(
+    peer_profiles: list[PeerProfile], top_quartile_min: Optional[int]
+) -> list[PeerProfile]:
+    """Return a rubric-aligned competitor comparison set of size 5-10 when possible.
+
+    Preference order:
+      1) top-quartile peers
+      2) best remaining peers by AI maturity then funding
+    """
+    sorted_peers = sorted(
+        peer_profiles,
+        key=lambda peer: (peer.ai_maturity, peer.total_funding_usd or 0.0),
+        reverse=True,
+    )
+    if not sorted_peers:
+        return []
+
+    top_quartile = (
+        [peer for peer in sorted_peers if top_quartile_min is not None and peer.ai_maturity >= top_quartile_min]
+        if top_quartile_min is not None
+        else []
+    )
+    selected = list(top_quartile)
+
+    # If top-quartile has fewer than 5 peers, backfill with strongest remaining.
+    if len(selected) < 5:
+        selected_ids = {peer.crunchbase_id for peer in selected}
+        for peer in sorted_peers:
+            if peer.crunchbase_id in selected_ids:
+                continue
+            selected.append(peer)
+            if len(selected) >= 5:
+                break
+
+    # Cap at 10 even if top quartile is large.
+    return selected[:10]
+
+
 def build_competitor_gap_brief(
     *,
     prospect_record: CrunchbaseRecord,
@@ -133,9 +173,11 @@ def build_competitor_gap_brief(
             distribution_position=None,
             sector=prospect_record.industry,
             peer_count=0,
+            selected_competitor_count=0,
             sparse_sector=True,
             selection_criteria=criteria,
             peers=[],
+            selected_competitors=[],
             top_quartile_ai_maturity_min=None,
             gap_practices=[],
             retrieved_at=now,
@@ -163,7 +205,8 @@ def build_competitor_gap_brief(
         else:
             quartile = 4
 
-    top_peers = [peer for peer in peer_profiles if peer.ai_maturity >= (tq_min or 99)]
+    selected_competitors = _select_5_to_10_competitors(peer_profiles, tq_min)
+    top_peers = [peer for peer in selected_competitors if tq_min is not None and peer.ai_maturity >= tq_min]
     gaps = _gap_practices(prospect_profile, top_peers) if top_peers else []
 
     return CompetitorGapBrief(
@@ -177,9 +220,11 @@ def build_competitor_gap_brief(
         },
         sector=prospect_record.industry,
         peer_count=len(peer_profiles),
+        selected_competitor_count=len(selected_competitors),
         sparse_sector=len(peer_profiles) < 5,
-        selection_criteria=criteria,
+        selection_criteria=criteria + ["comparison set targets 5-10 competitors; top quartile preferred"],
         peers=peer_profiles,
+        selected_competitors=selected_competitors,
         top_quartile_ai_maturity_min=tq_min,
         gap_practices=gaps,
         retrieved_at=now,
@@ -194,6 +239,7 @@ def competitor_gap_brief_to_dict(brief: CompetitorGapBrief) -> dict:
         "distribution_position": brief.distribution_position,
         "sector": brief.sector,
         "peer_count": brief.peer_count,
+        "selected_competitor_count": brief.selected_competitor_count,
         "sparse_sector": brief.sparse_sector,
         "selection_criteria": brief.selection_criteria,
         "peers": [
@@ -206,6 +252,17 @@ def competitor_gap_brief_to_dict(brief: CompetitorGapBrief) -> dict:
                 "signals": peer.signals,
             }
             for peer in brief.peers
+        ],
+        "selected_competitors": [
+            {
+                "name": peer.name,
+                "crunchbase_id": peer.crunchbase_id,
+                "ai_maturity": peer.ai_maturity,
+                "ai_role_share": peer.ai_role_share,
+                "total_funding_usd": peer.total_funding_usd,
+                "signals": peer.signals,
+            }
+            for peer in brief.selected_competitors
         ],
         "top_quartile_ai_maturity_min": brief.top_quartile_ai_maturity_min,
         "gap_practices": brief.gap_practices,

@@ -1,0 +1,85 @@
+﻿{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "competitor_gap_brief.schema.json",
+  "title": "competitor_gap_brief",
+  "type": "object",
+  "required": [
+    "prospect_company",
+    "prospect_ai_maturity",
+    "distribution_position",
+    "sector",
+    "peer_count",
+    "selected_competitor_count",
+    "sparse_sector",
+    "selection_criteria",
+    "peers",
+    "selected_competitors",
+    "gap_practices",
+    "retrieved_at",
+    "source"
+  ],
+  "properties": {
+    "prospect_company": {"type": "string"},
+    "prospect_ai_maturity": {"type": "integer", "minimum": 0, "maximum": 3},
+    "prospect_quartile": {"type": ["integer", "null"], "minimum": 1, "maximum": 4},
+    "distribution_position": {
+      "type": ["object", "null"],
+      "properties": {
+        "quartile": {"type": ["integer", "null"], "minimum": 1, "maximum": 4},
+        "score": {"type": "integer", "minimum": 0, "maximum": 3},
+        "peer_scores": {"type": "array", "items": {"type": "integer", "minimum": 0, "maximum": 3}}
+      },
+      "required": ["quartile", "score", "peer_scores"]
+    },
+    "sector": {"type": ["string", "null"]},
+    "peer_count": {"type": "integer", "minimum": 0},
+    "selected_competitor_count": {"type": "integer", "minimum": 0, "maximum": 10},
+    "sparse_sector": {"type": "boolean"},
+    "selection_criteria": {"type": "array", "items": {"type": "string"}},
+    "peers": {"type": "array", "items": {"$ref": "#/$defs/peer"}},
+    "selected_competitors": {"type": "array", "items": {"$ref": "#/$defs/peer"}},
+    "top_quartile_ai_maturity_min": {"type": ["integer", "null"], "minimum": 0, "maximum": 3},
+    "gap_practices": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["practice", "supporting_peers", "supporting_peer_count", "confidence", "evidence"],
+        "properties": {
+          "practice": {"type": "string"},
+          "supporting_peers": {"type": "array", "items": {"type": "string"}},
+          "supporting_peer_count": {"type": "integer", "minimum": 0},
+          "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["peer", "signal", "weight", "evidence"],
+              "properties": {
+                "peer": {"type": "string"},
+                "signal": {"type": "string"},
+                "weight": {"type": "string", "enum": ["high", "medium", "low"]},
+                "evidence": {"type": ["string", "array"]}
+              }
+            }
+          }
+        }
+      }
+    },
+    "retrieved_at": {"type": "string", "format": "date-time"},
+    "source": {"type": "string"}
+  },
+  "$defs": {
+    "peer": {
+      "type": "object",
+      "required": ["name", "crunchbase_id", "ai_maturity", "ai_role_share", "signals"],
+      "properties": {
+        "name": {"type": "string"},
+        "crunchbase_id": {"type": "string"},
+        "ai_maturity": {"type": "integer", "minimum": 0, "maximum": 3},
+        "ai_role_share": {"type": "number", "minimum": 0, "maximum": 1},
+        "total_funding_usd": {"type": ["number", "null"]},
+        "signals": {"type": "array", "items": {"type": "object"}}
+      }
+    }
+  }
+}
